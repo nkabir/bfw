@@ -1,0 +1,50 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Module    : getc
+# Location  : */lib/bfw/src
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Get the input buffer, one character at a time.
+# Copyright (c) 2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# notes go here
+#-----------------------------------------------------------
+# CHANGELOG
+#-----------------------------------------------------------
+# $Log$
+# * Thu May  3 2013 Scott Smith <scott@bashify.com>
+# - Initial release.
+#-----------------------------------------------------------
+
+if [ -z "bfw_bash_framework" ]
+then
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+#:<
+#= getc VARNAME
+#
+# Read the input buffer, one character at a time.
+#
+# where:  VARNAME  is the variable to receive the input
+#
+# notes:  The returns ALL characters, including Enter,
+#         Escape, newline (end of line), etc.
+#
+#         Example - echo kbd input (^C to abort):
+#
+#         $ while getc ch ; do echo -e "[$ch]" ; done
+#:>
+
+getc()
+{
+  IFS= read -r -s -n 1 -d '' "$1"
+}
+declare -Ftx getc
+
+#-----------------------------------------------------------
+#EOF(getc)

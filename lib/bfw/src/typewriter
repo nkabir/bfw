@@ -1,0 +1,105 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Module    : typewriter
+# Location  : */lib/bfw/src
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Mimic a typewriter when displaying text.
+# Copyright (c) 2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# notes go here
+#-----------------------------------------------------------
+# CHANGELOG
+#-----------------------------------------------------------
+# $Log$
+# * Thu May  3 2013 Scott Smith <scott@bashify.com>
+# - Initial release.
+#-----------------------------------------------------------
+
+if [ -z "bfw_bash_framework" ]
+then
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+#:<
+#= typewriter [delay] < message
+#
+# Mimic a typewriter when displaying text.
+#
+# where:  delay  the delay between characters, one of:
+#                random  varies the delay from 0.0 and 0.9
+#                        seconds with each character
+#                fast    0.01 seconds between characters
+#                medium  0.05 seconds between characters
+#                normal  0.10 seconds between chars (default)
+#                slow    0.25 seconds between characters
+#                1-99    user-specified tenths of a second
+#                        delay between characters
+#
+# notes:  This function reads the message to display from
+#         stdin and depends on the getc() function.
+#
+#         Example:
+#
+#         $ ls -l typewriter fast
+#:>
+
+typewriter()
+{
+  local DELAY="$1"
+
+  case "$DELAY" in
+  [1-9][0-9]) DELAY=${1:0:1}.${1:1:1} ;;
+  [1-9])  DELAY=0.$1 ;;
+  random) DELAY="$1" ;;
+  fast)   DELAY=0.01 ;;
+  medium) DELAY=0.05 ;;
+  slow)   DELAY=0.25 ;;
+  *)      DELAY=0.1  ;;
+  esac
+
+  while getc ch
+  do
+    echo -n "$ch"
+    [ "$DELAY" = "random" ] && sleep 0.${RANDOM:0:1} || sleep $DELAY
+  done
+}
+declare -Ftx typewriter
+
+#-----------------------------------------------------------
+
+typewriter2()
+{
+  local DELAY="$1"
+  shift
+  local TEXT="$*"
+
+  local MAX=${#TEXT}
+  local CHR
+
+  case "$DELAY" in
+  [1-9][0-9]) DELAY=${1:0:1}.${1:1:1} ;;
+  [1-9])  DELAY=0.$1 ;;
+  random) DELAY="$1" ;;
+  fast)   DELAY=0.01 ;;
+  medium) DELAY=0.05 ;;
+  slow)   DELAY=0.25 ;;
+  *)      DELAY=0.1  ;;
+  esac
+
+  for (( CHR=0; CHR < $MAX; CHR++ ))
+  do
+    echo -n "${TEXT:$CHR:1}"
+    [ "$DELAY" = "random" ] && sleep 0.${RANDOM:0:1} || sleep $DELAY
+  done
+
+  #echo
+}
+declare -Ftx typewriter2
+
+#-----------------------------------------------------------
+#EOF(getc)

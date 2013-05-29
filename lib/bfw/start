@@ -1,0 +1,341 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Program   : start
+# Location  : */lib/bfw
+# Author    : J. Scott Smith <scott@bashify.com>
+# System    : Bash Framework
+# Purpose   : Entry/exit module for bfw scripts
+# Copyright (c) 2005-2013 J. Scott Smith
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# This script provides a common entry and exit point for bfw
+# scripts. The system works as follows:
+#
+# 1. This script resides in */lib/bfw as init
+# 2. The user script must exist in */lib/bfw/sh as 'script'
+#    ('script' can be any file name)
+# 3. A symlink must be created in */bin linking to 'init'
+#    using the 'script' name - for example:
+#    */bin/script --> */lib/bfw/init
+# 4. This (init) script will load the appropriate module
+#    from */lib/bfw/bin, using the 'script' name - that is:
+#    */lib/bfw/bin/script
+#-----------------------------------------------------------
+# CHANGELOG
+#-----------------------------------------------------------
+# $Log$
+# * Apr 25 2013 J. Scott Smith <j-scott.smith@shell.com>
+# - Refactored into bfw
+#-----------------------------------------------------------
+
+# errors count down during initialization - first will be 99
+
+bfw_error_level=100
+
+# bfw requires bash 4.2
+
+(( bfw_error_level-- ))
+
+bfw_minimum_bash_version="41"  # running 4.1 on HostGator
+bfw_current_bash_version="${BASH_VERSINFO[0]}${BASH_VERSINFO[1]}"
+
+if (( bfw_current_bash_version*10 >= bfw_minimum_bash_version*10 ))
+then
+  unset bfw_minimum_bash_version bfw_current_bash_version
+else
+  echo "ABORTED: bash ${bfw_minimum_bash_version}+ is required" 1>&2
+  exit $bfw_error_level
+fi
+
+#-----------------------------------------------------------
+# setup some common functions and aliases
+
+# scripts will need a way to determine if the bash framework
+# is being used, so we set bfw_bash_framework
+
+bfw_bash_framework=1
+
+# useful is_function and is_alias functions
+
+is_function() { [ "$(type -t "$1")" = "function" ] ; }
+is_alias() { [ "$(type -t "$1")" = "alias" ] ; }
+
+# useful function for making indirect assignments
+
+assign() { export "$1"="$2"; }
+
+# The 'const' aliases allows vars to be defined read-only,
+# which will cause bash to barf a warning on attempts to
+# change the var. It can be used post facto to convert a
+# r/w var into a r/o 'constant'.
+
+shopt -s expand_aliases
+alias const='declare -rx'
+
+# 'unless' alias - note that 'endunless' is defined, but
+# 'fi' works just as well. An 'else' is also acceptable,
+# but 'elsunless' would not make much sense. There's no
+# reason 'elsif !' couldn't be used, though.
+#
+# Note: Use of unless/endunless messes up syntax hiliting
+#       in most editors, including vim.
+
+alias unless='if !'
+alias endunless='fi'
+
+#-----------------------------------------------------------
+# iniitialize the 'bfw' array
+
+declare -Ax bfw
+
+bfw[version]="0.1"
+bfw[arg0]="$0"
+bfw[script]="${0##*/}"
+bfw[source]="$(readlink -e "$0" | sed 's#/[^/]*$##')"
+bfw[user]="$(whoami)"
+bfw[id]="$(id -u)"
+bfw[host]="$(hostname)"
+
+#-----------------------------------------------------------
+# make sure the user isn't running the 'start' script
+# directly - or even a user script nameed start
+
+(( bfw_error_level-- ))
+
+case "${bfw[script]}" in
+bfw|start)
+  echo "ERROR: '${bfw[script]}' is a forbidden script name" 1>&2
+  exit $bfw_error_level
+  ;;
+esac
+
+#-----------------------------------------------------------
+# function to allow scripts to set their version (via
+# code and not in the .conf file - preferably)
+
+bfw_script_version()
+{
+  bfw[script_version]="$*"
+}
+
+#-----------------------------------------------------------
+# these can be overridden in bfw.conf, or 'script'.conf
+
+bfw[top]="${bfw[source]%/*/*}"
+
+bfw[lib]="${bfw[top]}/lib/bfw"
+bfw[bin]="${bfw[lib]}/bin"
+bfw[sh]="${bfw[lib]}/sh"
+bfw[src]="${bfw[lib]}/src"
+bfw[hlp]="${bfw[lib]}/hlp"
+
+bfw[etc]="${bfw[top]}/etc/bfw"
+bfw[cfg]="${bfw[etc]}/bfw.conf"
+
+bfw[start]="${bfw[lib]}/start"
+
+bfw[run]="${bfw[sh]}/${bfw[script]}"
+
+bfw[tmp]="/tmp/${bfw[script]}.$$.$(date +%s)"
+
+#-----------------------------------------------------------
+# load the default configuration file
+
+(( bfw_error_level-- ))
+
+if [ -f "${bfw[cfg]}" ]
+then
+  source "${bfw[cfg]}"
+else
+  echo "ERROR: not found - ${bfw[cfg]}" 1>&2
+  exit $bfw_error_level
+fi
+
+bfw[script_cfg]="${bfw[etc]}/${bfw[script]}.conf"
+
+#-----------------------------------------------------------
+# make sure the config script has set valid paths
+
+(( bfw_error_level-- ))
+
+bfw_error=''
+
+for bfw_check in top lib bin sh etc hlp
+do
+  unless [ -d "${bfw[$bfw_check]}" ]
+  then
+    echo "ERROR: not found - ${bfw[$bfw_check]}"
+    bfw_error=Y
+  fi
+done
+
+for bfw_check in script_cfg run
+do
+  unless [ -f "${bfw[$bfw_check]}" ]
+  then
+    echo "ERROR: not found - ${bfw[$bfw_check]}"
+    bfw_error=Y
+  fi
+done
+
+[ "$bfw_error" ] && exit $bfw_error_level
+
+#-----------------------------------------------------------
+# load the script's configuration file
+
+(( bfw_error_level-- ))
+
+if [ -f "${bfw[script_cfg]}" ]
+then
+  source "${bfw[script_cfg]}"
+else
+  echo "ERROR: not found - ${bfw[script_cfg]}" 1>&2
+  exit $bfw_error_level
+fi
+
+#-----------------------------------------------------------
+# set bfw[requires_user]=1 if the script is root-only (or
+# some other user), otherwise set bfw[requires_user[=0 to
+# allow any user to run the script
+
+# NOTE - this should be set in the script config file
+
+# bfw[requires_user]=0
+
+# root or other "normal" user
+
+# bfw[required_user]=guest
+# bfw[required_uid]=-1
+
+# developer user (set to something invalid if not used)
+
+# bfw[developer_user]=guest
+# bfw[developer_uid]=-1
+
+(( bfw_error_level-- ))
+
+bfw[required_match]="${bfw[required_user]}:${bfw[required_uid]}"
+bfw[developer_match]="${bfw[developer_user]}:${bfw[developer_uid]}"
+
+if [ "${bfw[requires_user]}" = "1" ]
+then
+  case "${bfw[user]}:${bfw[id]}" in
+  "${bfw[required_match]}"|"${bfw[developer_match]}")
+    : # ok
+    ;;
+  *)
+    echo "ERROR: execution by ${bfw[user]} not permitted" 1>&2
+    exit $bfw_error_level
+    ;;
+  esac
+fi
+
+#-----------------------------------------------------------
+# setup the debug and trace modes
+
+bfw[debug]=""
+bfw[trace]=""
+
+while :
+do
+  case "$1" in
+  --DEBUG) shift ; bfw[debug]=ON ;;
+  --debug) shift ; bfw[debug]=Y ;;
+  --TRACE) shift ; bfw[trace]="ON" ;;
+  --trace) shift ; bfw[trace]="EZ" ;;
+  *) break ;;
+  esac
+done
+
+# remaining command line args are parsed by the script
+
+bfw_args=("$@")
+
+# setup aliases for managing tracing
+
+case "${bfw[trace]}" in
+EZ) # EZ trace mode (--trace)
+    alias TRACE=': #EZTRACE ON'
+    alias NOTRACE=': #EZTRACE OFF'
+    ;;
+ON) # FULL trace mode (--TRACE)
+    alias TRACE='set -vx # TRACE ON'
+    alias NOTRACE='set +vx # TRACE OFF'
+    ;;
+*)  # NO tracing
+    alias TRACE=': #NOTRACE'
+    alias NOTRACE=': #NOTRACE'
+    ;;
+esac
+
+# add the debug module to the load list if either --debug
+# or --DEBUG has been specified on the command line
+
+[ "${bfw[debug]}" ] && bfw[load]+=" debug"
+
+#-----------------------------------------------------------
+# load the source modules - user can override the defaults
+
+bfw[loaded]=''
+
+for bfw_file in ${bfw[load]}
+do
+  bfw_match="\b$bfw_file\b"
+  if ! [[ ${bfw[loaded]} =~ $bfw_match ]]
+  then
+    bfw_filepath="${bfw[src]}/$bfw_file"
+    if [ -f "$bfw_filepath" ]
+    then
+      source "$bfw_filepath"
+      bfw[loaded]+=" $bfw_file"
+    else
+      echo "WARNING: cannot load module $bfw_file" 1>&2
+    fi
+  fi
+done
+
+#-----------------------------------------------------------
+# add bfw[bin] to the path, and its files to the hash table
+
+PATH="${bfw[bin]}:$PATH"
+
+for bfw_file in ${bfw[bin]}/*
+do
+  hash "$bfw_file"
+done
+
+#-----------------------------------------------------------
+# clean up temporary bfw_? variables
+
+unset bfw_error bfw_error_level bfw_check bfw_file bfw_filepath bfw_match
+
+#-----------------------------------------------------------
+# set some false trace aliases, so scripts won't fail if the
+# --trace option isn't used and the trace module is removed
+# from the bfw[load] string
+
+is_function debug_on || alias debug_on=': #DEBUG ON'
+is_alias debug_off || alias debug_off=': #DEBUG OFF'
+
+# TRACE has no effect unless --TRACE was specified
+
+TRACE
+
+# notes on how to turn on/off debug mode
+#
+# debug_on                  # enables --debug mode
+# trap - DEBUG; set +vx     # disables --debug mode & --trace mode
+                            # omit 'set +vx' to leave --trace unchanged
+# debug_off                 # performs the above in one quieter step
+
+[ "${bfw[debug]}" = "ON" ] && debug_on
+
+#-----------------------------------------------------------
+# load main script
+#-----------------------------------------------------------
+
+source "${bfw[run]}"
+
+#-----------------------------------------------------------
+#EOF(start)

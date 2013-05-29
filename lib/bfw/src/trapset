@@ -1,0 +1,63 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Module    : trapset
+# Location  : */lib/bfw/src
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Provides a default trap setup.
+# Copyright (c) 2005-2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# Including this file will trap the usual exit codes and run
+# the die() function with the specified exit code
+#-----------------------------------------------------------
+# CHANGELOG
+#-----------------------------------------------------------
+# $Log$
+# * Thu May 16 2013 Scott Smith <scott@bashify.com>
+# - Initial release.
+#-----------------------------------------------------------
+
+if [ -z "bfw_bash_framework" ]
+then
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+#:<
+#= trapset
+#
+# Provides a standard set of traps for signals 1, 2, 3 & 15.
+#
+# notes:  The signal names are, respectively, SIGHUP, SIGINT,
+#         SIGQUIT and SIGTERM.
+#
+#         The commands executed by the trap are:
+#
+#             clear
+#             die SIGNAL_NUMBER "\n${brw[script]} terminated by SIGNAL_NAME\n"
+#
+#         Generally speaking, call trapset() once your code
+#         has reached the point where there is cleanup to be
+#         done, such as removing temporary files. Remember,
+#         the die() function will place a call to cleanup()
+#         if it exists.
+#:>
+
+trapset()
+{
+	local SIGNAME SIGCODE
+
+	for TRAP in SIGHUP:1 SIGINT:2 SIGQUIT:3 SIGTERM:15
+	do
+		SIGNAME="${TRAP%:*}"
+		SIGCODE="${TRAP#*:}"
+		trap "clear;die $SIGCODE '\n${bfw[script]} terminated by $SIGNAME\n'" $SIGCODE
+        done
+}
+declare -Ftx trapset
+
+#-----------------------------------------------------------
+#EOF(trapset)

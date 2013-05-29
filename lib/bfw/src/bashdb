@@ -1,0 +1,384 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Module    : bashdb
+# Location  : */lib/bfw/src
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Implements a key/value text database
+# Copyright (c) 2006-2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# Usage : getprop key property dbfile
+#         getpropx key property dbfile
+#
+# Note:	getprop returns the literal property, just as it is
+#	shown in dbfile.
+#
+#	Property values may contain embedded shell variable
+#	references. For example, if the dbfile contains:
+#
+#		mykey:myprop:The value of myvar is @%myvar%@
+#
+#	getprop returns this:
+#
+#		> myvar=hello
+#		> getprop mykey myprop dbfile
+#		The value of myvar is @%myvar%@
+#
+#	getpropx expands embedded shell variables, so it
+#	returns this:
+#
+#		> myvar=hello
+#		> getprop mykey myprop dbfile
+#		The value of myvar is hello
+#
+#	usage: BASHDB_FILE={default_db_file|NULL}
+#
+#	The value of dbfile can be preset by setting the
+#	BASHDB_FILE variable to the name of the dbfile.
+#	When this is set it is not necessary to specify the
+#	dbfile option, but if the dbfile option is used it
+#	will override the BASHDB_FILE variable. If dbfile
+#	is not used and BASHDB_FILE is not set, or if the
+#	specified dbfile does not exist, then the returned
+#	value is "?error"
+#
+#	A key can be set that has no property, but only one
+#	value (effectively, a key:value pair rather than a
+#	key:property:value item.) These can be recalled by
+#	using:  getprop mykey "" dbfile.
+#
+#	A key can also be assigned a default value. This is
+#	the value that is used if no matching property can
+#	be found. For example:
+#
+#		mykey:prop1:value1
+#		mykey:prop2:value2
+#		mykey:prop3:value3
+#		mykey:*:default_value
+#
+#		> getprop mykey prop1 dbfile
+#		value1
+#		> getprop mykey prop7 dbfile
+#		default_value
+#
+#	usage: BASHDB_TALK={Y|*}
+#
+#	Set BASHDB_TALK if you want to see error results. If
+#	BASHDB_TALK is unset, error results are not output.
+#
+#-----------------------------------------------------------
+# CHANGELOG
+#-----------------------------------------------------------
+# $Log$
+# * Thu May 16 2013 {{author}}
+# - Initial release.
+#-----------------------------------------------------------
+
+bashdb_usage()
+{
+	egrep "#?[ 	]*usage:" ~/etc/bash/bashdb.shinc \
+	| fgrep -v bashdb__ \
+	| egrep -v 'egrep |fgrep |sed ' \
+	| sed 's/.*usage:[ 	]*//'
+}
+declare -Ftx bashdb_usage
+
+#-----------------------------------------------------------
+
+bashdb__talk()
+{
+	# usage: bashdb__talk [ --on | --off | message_text ]
+	case "$1" in
+	--on) BASHDB_TALK=Y ;;
+	--off) BASHDB_TALK="" ;;
+	*) [ "$BASHDB_TALK" ] && echo "$*" ;;
+	esac
+}
+declare -Ftx bashdb__talk
+
+#-----------------------------------------------------------
+
+bashdb__okay()
+{
+	# usage: bashdb__okay string
+	[ "${1:0:1}" = "?" ] && return 1 || return 0
+}
+declare -Ftx bashdb__okay
+
+#-----------------------------------------------------------
+
+bashdb__error()
+{
+	# usage: bashdb__error string
+	[ "${1:0:1}" = "?" ] && return 0 || return 1
+}
+declare -Ftx bashdb__error
+
+#-----------------------------------------------------------
+
+bashdb__dbfile()
+{
+	# usage: dbfile=$(bashdb__file dbfile)
+
+	local DBFILE="${1:-$BASHDB_FILE}"
+
+	if [ -z "$DBFILE" ]
+	then
+		echo "?null"
+	elif [ -f "$DBFILE" ]
+	then
+		echo "$DBFILE"
+	else
+		echo "?not_found"
+	fi
+}
+declare -Ftx bashdb__dbfile
+
+#-----------------------------------------------------------
+
+getprop()
+{
+	#? usage: value=$(getprop key property dbfile)
+
+	local KEY PROP DBFILE
+
+	KEY="${1:-?no_key}"
+	PROP="${2:-.*}"
+	DBFILE="$(bashdb__dbfile "$3")"
+
+	if bashdb__error "$KEY"
+	then
+		bashdb__talk "$KEY"
+	elif bashdb__error "$DBFILE"
+	then
+		bashdb__talk "$DBFILE"
+	elif grep "^$KEY:$PROP:" "$DBFILE" &>/dev/null
+	then
+		grep "^$KEY:$PROP:" "$DBFILE" | cut -d: -f3
+	else
+		grep "^$KEY:[*]:" "$DBFILE" | cut -d: -f3
+	fi
+}
+declare -Ftx getprop
+
+#-----------------------------------------------------------
+
+getpropx()
+{
+	#? usage: value=$(getpropx key property dbfile)
+
+	local VALUE OLDIFS ARGS ARG N
+
+	VALUE="$(getprop "$@")"
+
+	if grep "@%.*%@" <<<"$VALUE" &>/dev/null
+	then
+
+		OLDIFS="$IFS"
+		IFS="@"
+
+		set -- $VALUE
+
+		ARGS=$#
+		N=0
+
+		until (( ++N > ARGS ))
+		do
+			ARG="${!N}"
+
+			if grep "^%.*%$" <<<"$ARG" &>/dev/null
+			then
+				ARG="${ARG#?}"
+				ARG="${ARG%?}"
+				echo -n "${!ARG}"
+			else
+				echo -n "$ARG"
+			fi
+
+		done
+
+		IFS="$OLDIFS"
+
+	else
+		echo -n "$VALUE"
+	fi
+
+	echo
+}
+declare -Ftx getpropx
+
+#-----------------------------------------------------------
+
+getkey()
+{
+	#? usage: value=$(getkey key dbfile)
+
+	local KEY DBFILE
+
+	KEY="${1:-?no_key}"
+	DBFILE="$(bashdb__dbfile "$2")"
+
+	if bashdb__error "$KEY"
+	then
+		bashdb__talk "$KEY"
+	elif bashdb__error "$DBFILE"
+	then
+		bashdb__talk "$DBFILE"
+	else
+		echo -n "$KEY"
+		grep "^$KEY:" "$DBFILE" \
+		| awk -F: '{ printf ":%s:%s",$2,$3 }'
+		echo
+	fi
+}
+declare -Ftx getkey
+
+#-----------------------------------------------------------
+
+bashdb_dump()
+{
+	#? usage: bashdb_dump [--sort] [--reverse] dbfile
+
+	local DBFILE SORTCMD SORTOPT
+
+	SORTCMD="cat -"
+	SORTOPT=""
+
+	while :
+	do
+		case "$1" in
+		-s|--sort) SORTCMD="sort" ;;
+		-r|--reverse) SORTCMD="sort" ; SORTOPT="-r" ;;
+		-u|--up|-a|--asc|--ascending) SORTCMD="sort" ; SORTOPT="" ;;
+		-d|--down|--desc|--descending) SORTCMD="sort" ; SORTOPT="-r" ;;
+		-n|--natural|--unsorted) SORTCMD="sort" ; SORTOPT="" ;;
+		*) break ;;
+		esac
+		shift
+	done
+
+	DBFILE="$(bashdb__dbfile "$1")"
+
+	if bashdb__error "$DBFILE"
+	then
+		bashdb__talk "$DBFILE"
+	else
+		egrep -v "^(|[ 	]*#.*)$" "$DBFILE" \
+		| $SORTCMD $SORTOPT \
+		| awk -F: '
+		BEGIN { LASTKEY="" ; FOOTER=0 }
+		$1 != LASTKEY {
+			if ( LASTKEY != "" ) print "}"
+			print $1 " {"
+			LASTKEY=$1
+			FOOTER=1
+		}
+		{ printf "    %-16s = %s\n",$2,$3 }
+		END { if ( FOOTER ) print "}" }
+		'
+	fi
+}
+declare -Ftx bashdb_dump
+
+#-----------------------------------------------------------
+
+bashdb_dumpkey()
+{
+	#? usage: bashdb_dumpkey [--sort] [--reverse] key dbfile
+
+	local KEY DBFILE SORTCMD SORTOPT
+
+	SORTCMD="cat -"
+	SORTOPT=""
+
+	while :
+	do
+		case "$1" in
+		-s|--sort) SORTCMD="sort" ;;
+		-r|--reverse) SORTCMD="sort" ; SORTOPT="-r" ;;
+		-u|--up|-a|--asc|--ascending) SORTCMD="sort" ; SORTOPT="" ;;
+		-d|--down|--desc|--descending) SORTCMD="sort" ; SORTOPT="-r" ;;
+		-n|--natural|--unsorted) SORTCMD="sort" ; SORTOPT="" ;;
+		*) break ;;
+		esac
+		shift
+	done
+
+	KEY="${1:-?no_key}"
+	DBFILE="$(bashdb__dbfile "$2")"
+
+	if bashdb__error "$KEY"
+	then
+		bashdb__talk "$KEY"
+	elif bashdb__error "$DBFILE"
+	then
+		bashdb__talk "$DBFILE"
+	else
+		egrep -v "^(|[ 	]*#.*)$" "$DBFILE" \
+		| grep "^$KEY:" \
+		| $SORTCMD $SORTOPT \
+		| awk -F: '
+		BEGIN { LASTKEY="" ; FOOTER=0 }
+		$1 != LASTKEY {
+			if ( LASTKEY != "" ) print "}"
+			print $1 " {"
+			LASTKEY=$1
+			FOOTER=1
+		}
+		{ printf "    %-16s = %s\n",$2,$3 }
+		END { if ( FOOTER ) print "}" }
+		'
+	fi
+}
+declare -Ftx bashdb_dumpkey
+
+#-----------------------------------------------------------
+
+bashdb_info()
+{
+	#? usage: bashdb_info key dbfile
+
+	local KEY DBFILE
+
+	KEY="${1:-?no_key}"
+	DBFILE="$(bashdb__dbfile "$2")"
+
+	if bashdb__error "$KEY"
+	then
+		bashdb__talk "$KEY"
+	elif bashdb__error "$DBFILE"
+	then
+		bashdb__talk "$DBFILE"
+	else
+		sed -n "/^#=[ 	]*$KEY:/,/^[ 	]*$/ p" "$DBFILE" \
+		| sed 's/^#=[ 	]/Key = / ; s/^#+[ 	]*//'
+	fi
+}
+declare -Ftx bashdb_info
+
+#-----------------------------------------------------------
+
+bashdb_help()
+{
+	#? usage: bashdb_help dbfile
+
+	local DBFILE
+
+	DBFILE="$(bashdb__dbfile "$1")"
+
+	if bashdb__error "$DBFILE"
+	then
+		bashdb__talk "$DBFILE"
+	else
+		grep "^#[=+]" "$DBFILE" \
+		| sed '
+			s/^#=[ 	]/-------------------------------------------------------\
+Key = /
+			s/^#+[ 	]*//'
+	fi
+}
+declare -Ftx bashdb_help
+
+#-----------------------------------------------------------
+#EOF(bashdb)

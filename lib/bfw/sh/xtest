@@ -1,0 +1,19 @@
+#!/bin/bash
+
+if [ "bfw_bash_framework" ]
+then
+  [ "${bfw[debug]}" = "ON" ] && debug_on
+  bfw_script_version "2013-05-28"
+else
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+clear
+
+cursor 2 35 ; echo "Menu Test"
+cursor 3 35 ; echo "---------"
+cursor 8 30 ; getmenu CHOICE "A)bout d)amn t)ime: " valid esc null timeout 5
+cursor 10 0
+
+#EOF(xtest)

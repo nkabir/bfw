@@ -1,0 +1,65 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Program   : tlevel
+# Location  : ~/lib/bfw/sh
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Read info from a bfw source module
+# Copyright (c) 2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+
+if [ "bfw_bash_framework" ]
+then
+  [ "${bfw[debug]}" = "ON" ] && debug_on
+  bfw_script_version "2013-05-28"
+else
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+USAGE="usage:	${bfw[script]} [--help] [-n#] tree_file"
+
+HELP="\
+where:	-n# is the number of levels to display from tree_file
+	(the range for -n is 1..9, and the default is -n1)
+
+	If tree_file is '-' then read from stdin.
+"
+
+LEVELS=1
+
+case "$1" in
+-n[1-9]) LEVELS="${1#-n}" ; shift ;;
+-[1-9]) LEVELS="${1#-}" ; shift ;;
+--help) help ;;
+"") : ;;
+*) usage ;;
+esac
+
+SOURCE="$1"
+
+[ -n "$SOURCE" ] || usage
+
+if [ "$SOURCE" = "-" ]
+then
+  SOURCE=/dev/stdin
+elif [ ! -f "$SOURCE" ]
+then
+  die 2 "\nerror:\tfile not found '$SOURCE'\n"
+fi
+
+DASHES="--------------------"
+
+MATCH="^(\|-"
+
+for (( N=2; N<=$LEVELS; N++ ))
+do
+  MATCH="$MATCH|\|${DASHES:0:$(( (N * 2) - 1 ))}"
+done
+
+MATCH="$MATCH|/)[^-]"
+
+egrep "$MATCH" "$SOURCE"
+
+#EOF(tlevel)

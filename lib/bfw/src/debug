@@ -1,0 +1,609 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Module    : debug
+# Location  : */lib/bfw/src
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : A rudimentary debug shell for bash.
+# Copyright (c) 2008-2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# Including this file will cause a bash script to stop after
+# each command and prompt "Press Enter:" -- on the preceding
+# lines you will see:
+#
+# _Debug_Step F(funcname) S(source) L(lineno)
+#
+# You MUST specify "declare -Ftx function_name" AFTER a
+# function is defined in order to have functions debugged;
+# otherwise, they will be "stepped over" (ie, execute as if
+# they are atomic commands.)
+#
+# Note that "declare -Fx function_name" is valid. It will
+# define the name as a function and export it, but it will
+# not give it the trace attribute.
+#
+# ONCE A FUNCTION HAS BEEN DEBUGGED AND IS CLASSIFIED AS A
+# UTILITY FUNCTION, THE -Fx OPTION SHOULD BE USED, NOT -Ftx.
+#-----------------------------------------------------------
+# CHANGELOG
+#-----------------------------------------------------------
+# $Log$
+# * Thu May 16 2013 Scott Smith <scott@bashify.com>
+# - Initial release.
+#-----------------------------------------------------------
+
+if [ -z "bfw_bash_framework" ]
+then
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+#:<
+#= _Debug_Step_
+#
+# IMPORTANT: Never call this function directly. It should be
+#            called only by trapping the DEBUG signal.
+#:>
+
+_Debug_Step_()
+{
+	# shell echo off during debug handling
+
+	set +vx &>/dev/null
+
+	# setup to handle this debug step, starting with
+	# the command line vars (passed in via the trap)
+
+	local DEBUG_FUNCTION="$1"
+	local DEBUG_SOURCE="$2"
+	local DEBUG_LINENO="$3"
+
+	# save current extglob state, then turn it on (-s=set)
+
+	local DEBUG_GLOB="$(shopt extglob)"
+
+	shopt -s extglob
+
+	# check for break conditions (only if in run mode)
+	#
+	# right now the break conditions are in a single string
+	# list, which creates challenges - it might be worthwile
+	# to rewrite to use an array - however, that will also
+	# make the break editing task much more difficult
+
+	if [ -n "$__DEBUG__BREAK__" -a -n "$__DEBUG__RUN__" ]
+	then
+
+		local BREAK_CMD BREAK_VAL BREAK_VAR BREAK_OPR
+
+		for BREAK_CMD in $__DEBUG__BREAK__
+		do
+
+			case "$BREAK_CMD" in
+			[Ll]:[0-9]*)
+				# break at line number
+				#
+				# for now this checks for eq line number
+				# but if necessary it can be updated to
+				# check for lt, le, gt, ge conditions
+				BREAK_VAL="$(( ${BREAK_CMD#??} + 0 ))"
+				if (( BREAK_VAL == DEBUG_LINENO ))
+				then
+					__DEBUG__RUN__=''
+					echo
+					echo "BREAK: LINENO $BREAK_VAL"
+				fi
+				;;
+			[Ff]:*)
+				# break at function name
+				BREAK_VAL="${BREAK_CMD#??}"
+				if [ "$BREAK_VAL" = "$DEBUG_FUNCTION" ]
+				then
+					__DEBUG__RUN__=''
+					echo
+					echo "BREAK: FUNCTION $BREAK_VAL"
+				fi
+				;;
+			[WwVv]:*)
+				# break at variable (watch) value
+				#
+				# right now this is a simple x=y check,
+				# but it might get expanded to include
+				# other comparisons - complex expressions
+				# are probably a non-starter, however
+
+				BREAK_VAL="${BREAK_CMD#??}"
+				BREAK_VAR="${BREAK_VAL%%[=<>\!]*}"
+				BREAK_VAL="${BREAK_VAL#*[=<>\!]}"
+				BREAK_OPR="${BREAK_CMD#??$BREAK_VAR}"
+				BREAK_OPR="${BREAK_OPR:0:1}"
+				case "$BREAK_OPR" in
+				'=')
+					if [[ "${!BREAK_VAR}" == "$BREAK_VAL" ]]
+					then
+						__DEBUG__RUN__=''
+						echo
+						echo "BREAK: $BREAK_VAR = $BREAK_VAL"
+					fi
+					;;
+				'!')
+					if [[ "${!BREAK_VAR}" != "$BREAK_VAL" ]]
+					then
+						__DEBUG__RUN__=''
+						echo
+						echo "BREAK: $BREAK_VAR <> $BREAK_VAL"
+					fi
+					;;
+				'>')
+					if [[ "${!BREAK_VAR}" > "$BREAK_VAL" ]]
+					then
+						__DEBUG__RUN__=''
+						echo
+						echo "BREAK: $BREAK_VAR > $BREAK_VAL"
+					fi
+					;;
+				'<')
+					if [[ "${!BREAK_VAR}" < "$BREAK_VAL" ]]
+					then
+						__DEBUG__RUN__=''
+						echo
+						echo "BREAK: $BREAK_VAR < $BREAK_VAL"
+					fi
+					;;
+				esac
+				;;
+			*)	# no clue, ignore, but spit out a warning
+				echo
+				echo "BREAK: unknown condition"
+				;;
+			esac
+
+		done
+
+		unset ${!BREAK_*}
+
+	fi
+
+	# check for continuous run mode (no more stepping)
+
+	if [ "$__DEBUG__RUN__" ]
+	then
+		[ "${DEBUG_GLOB##* }" = "off" ] && shopt -u extglob
+		return
+	fi
+
+	# vars used during processing - should be clear by
+	# how they're used as to what they do
+
+	local DEBUG_CMD DEBUG_VAR DEBUG_VAL DEBUG_PTR
+	local DEBUG_BEG DEBUG_END DEBUG_LIST DEBUG_END_ECHO
+
+	# flags to control local, interactive invocations
+	# of otherwise step-related features
+
+	local DEBUG_STACK=''
+	local DEBUG_SHOW_NEXT=Y
+	local DEBUG_RESET_VX=Y
+
+	# note that FUNCNAME et al have two elements in them
+	# we don't care about - the trap and the call to this
+	# (_Debug_Step_) function, so our DEBUG_MAX value is
+	# adjusted to account for this
+
+	local DEBUG_MAX="$(( ${#FUNCNAME[*]} - 2 ))"
+
+	# fish the next command line out of the script source
+
+	local DEBUG_NEXT_CMD="$(sed -n "$DEBUG_LINENO s/^[ 	]*\(.*\)/Next Cmd: \1/ ; $DEBUG_LINENO p ; $DEBUG_LINENO q" "$DEBUG_SOURCE" | tr "\n" " ")"
+
+	# separator to bracket longer interactive outputs
+
+	local DEBUG_SEPARATOR="------------------------------------------------------------"
+
+	# we're interactive now, processing commands until
+	# something breaks us out of this while loop
+
+	echo
+
+	while :
+	do
+
+		# __DEBUG__STACK__ is the global flag to show
+		# the function stack, DEBUG_STACK is the flag
+		# for the interactive 'show it now' command
+
+		if [ -n "$__DEBUG__STACK__" -o -n "$DEBUG_STACK" ]
+		then
+			echo "FUNCTION CALL STACK:"
+			echo "$DEBUG_SEPARATOR"
+			# walk the stack in reverse, so the top
+			# shows the first element, and the bottom
+			# is where we currently are
+			for (( DEBUG_PTR=DEBUG_MAX; DEBUG_PTR>=0; DEBUG_PTR-- ))
+			do
+				caller $DEBUG_PTR
+			done
+			echo "$DEBUG_SEPARATOR"
+			echo
+			# clear the local flag (whether set or not)
+			DEBUG_STACK=''
+		fi
+
+		# __DEBUG__WATCH__ holds a space separate list
+		# of variable names to output each time the
+		# prompt gets displayed
+
+		if [ "$__DEBUG__WATCH__" ]
+		then
+			echo "WATCHED VARIABLES:"
+			echo "$DEBUG_SEPARATOR"
+			for DEBUG_VAR in $__DEBUG__WATCH__
+			do
+				echo "$DEBUG_VAR=${!DEBUG_VAR}"
+			done
+			echo "$DEBUG_SEPARATOR"
+			echo
+		fi
+
+		# show the next command if requested - note that
+		# this is initially set, so it displays when the
+		# trap first calls _DEBUG_Step_, but is cleared
+		# after that to reduce clutter - so we have an
+		# interactive command to force it to display, too
+
+		if [ "$DEBUG_SHOW_NEXT" ]
+		then
+			echo "$DEBUG_NEXT_CMD"
+			echo
+			DEBUG_SHOW_NEXT=''
+		fi
+
+		# eventually, you don't really need to see the
+		# full text of the stupid prompt
+
+		if [ "$__DEBUG__VERBOSE__" ]
+		then
+			echo -n "ENTER for next command, or <h> for help: "
+		else
+			echo -n "DEBUG> "
+		fi
+
+		# read our interactive command - all of the input
+		# line is captured into DEBUG_CMD and parsed as a
+		# unit - could be done as separate vars, but this
+		# works out ok
+
+		read DEBUG_CMD
+		echo
+
+		# this flag simply controls whether or not to do
+		# an echo after parsing this particular command
+
+		DEBUG_END_ECHO=Y
+
+		case "$DEBUG_CMD" in
+		"")	# pressed ENTER and nothing else, time to
+			# step forward to the next command, so we
+			# get out of this loop now
+			break
+			;;
+
+		\?)	# a ? by itself is a call for help
+			_Debug_Help_ "$DEBUG_SEPARATOR"
+			;;
+
+		\?*)	# query the value of one or more variables
+			for DEBUG_VAR in ${DEBUG_CMD#?}
+			do
+				echo "$DEBUG_VAR = ${!DEBUG_VAR}"
+			done
+			;;
+
+		\@*)	# dump the values of an (only one) array
+			DEBUG_LIST="${DEBUG_CMD#?}"
+			eval DEBUG_VAL="\${#$DEBUG_LIST[*]}"
+			for (( DEBUG_PTR=0; DEBUG_PTR<DEBUG_VAL; DEBUG_PTR++))
+			do
+				DEBUG_VAR="$DEBUG_LIST[$DEBUG_PTR]"
+				echo "$DEBUG_LIST($DEBUG_PTR)=${!DEBUG_VAR}"
+			done
+			;;
+
+		\**)	# list all the variables with a name that
+			# start with a specified string
+			DEBUG_LIST="${DEBUG_CMD#?}"
+			eval DEBUG_LIST="\${!$DEBUG_LIST*}"
+			for DEBUG_VAR in $DEBUG_LIST
+			do
+				echo "$DEBUG_VAR = ${!DEBUG_VAR}"
+			done
+			;;
+
+		\=*)	# assign using =VAR:VALUE format
+			DEBUG_VAR="${DEBUG_CMD#?}"
+			DEBUG_VAR="${DEBUG_VAR%%:*}"
+			echo "Before: $DEBUG_VAR=${!DEBUG_VAR}"
+			export -n "$DEBUG_VAR"="${DEBUG_CMD#*:}"
+			echo "After : $DEBUG_VAR=${!DEBUG_VAR}"
+			;;
+
+		w|watch) # edit the list of varnames to watch (set
+			 # to null in order to stop watching)
+			DEBUG_LIST="$__DEBUG__WATCH__"
+			echo -n "Enter a space-separated list of variable "
+			echo "names to watch."
+			echo
+			read -e -i "$DEBUG_LIST" -p "Watch: " __DEBUG__WATCH__
+			echo
+			DEBUG_END_ECHO=''
+			;;
+
+		b|break) # edit the list of break conditions (set
+			 # to null in order to disable breakpoints)
+			DEBUG_LIST="$__DEBUG__BREAK__"
+			echo -n "Enter a space-separated list of break "
+			echo "conditions to monitor."
+			echo
+			read -e -i "$DEBUG_LIST" -p "Break: " __DEBUG__BREAK__
+			echo
+			DEBUG_END_ECHO=''
+			;;
+
+		l|list)	# list all variable NAMES (no values)
+			# using a 1/line format
+			echo "VARIABLE LIST (1 UP):"
+			echo "$DEBUG_SEPARATOR"
+			set \
+			| grep '^[[:alnum:]_]*=' \
+			| sed 's/=.*//'
+			echo "$DEBUG_SEPARATOR"
+			;;
+
+		v|vars)	# list all variable NAMES (no values)
+			# using a space separated list format
+			echo "VARIABLE LIST (1 LINE):"
+			echo "$DEBUG_SEPARATOR"
+			set \
+			| grep '^[[:alnum:]_]*=' \
+			| sed 's/=.*/ /' \
+			| tr "\n" " "
+			echo
+			echo "$DEBUG_SEPARATOR"
+			;;
+
+		f|funcs) # list all function names in a 1/line format
+			echo "FUNCTION LIST:"
+			echo "$DEBUG_SEPARATOR"
+			set | grep ' () *$'
+			echo "$DEBUG_SEPARATOR"
+			;;
+
+		context|context=*|code|code=*)
+			# display a default (10) or user-specified
+			# number of lines before and after the NEXT
+			# command to be executed
+			DEBUG_VAL="$(( ${DEBUG_CMD#*=} + 0 ))"
+			[ "$DEBUG_VAL" -gt 0 ] || DEBUG_VAL=10
+			DEBUG_END="$(( DEBUG_LINENO + DEBUG_VAL ))"
+			DEBUG_BEG="$(( DEBUG_LINENO - DEBUG_VAL ))"
+			[ "$DEBUG_BEG" -le 0 ] && DEBUG_BEG=1
+			echo "CONTEXT LISTING:"
+			echo "$DEBUG_SEPARATOR"
+			awk -v FIRST="$DEBUG_BEG" -v LAST="$DEBUG_END" \
+			    -v LINE="$DEBUG_LINENO" \
+			'	NR <  FIRST { next }
+				NR >  LAST  { exit }
+				NR == LINE  { print "* " $0 ; next }
+				{ print "  " $0 }
+			' "$DEBUG_SOURCE"
+			echo "$DEBUG_SEPARATOR"
+			;;
+
+		env|set) # show the complete environment in 'less'
+			set | less
+			;;
+
+		n|r)	# (n)ext or (r)edisplay the next command
+			DEBUG_END_ECHO=''
+			DEBUG_SHOW_NEXT=Y
+			;;
+
+		c|s)	# (c)all (s)tack display the function call stack
+			DEBUG_END_ECHO=''
+			DEBUG_STACK=Y
+			;;
+
+		run|resume)
+			# continue running without debug - not that
+			# this is NOT the same as turning debug off
+			#
+			# the trap is still in effect and calling
+			# _Debug_Step_ with each command - however,
+			# unless a breakpoint says otherwise, none
+			# of the rest of _Debug_Step_ executes - the
+			# main program still runs, but a bit more
+			# slowly that if the trap is turned off
+			__DEBUG__RUN__=Y &>/dev/null
+			DEBUG_RESET_VX=''
+			break
+			;;
+
+		verbose) # turn on the verbose prompt
+			DEBUG_END_ECHO=''
+			__DEBUG__VERBOSE=Y
+			;;
+
+		terse)	# turn off the verbose prompt
+			DEBUG_END_ECHO=''
+			__DEBUG__VERBOSE=''
+			;;
+
+		source)	# view the current source in 'less'
+			less "$DEBUG_SOURCE"
+			;;
+
+		stack)	# turn on displaying the call stack
+			DEBUG_END_ECHO=''
+			__DEBUG__STACK__=Y
+			;;
+
+		nostack) # turn off displaying the call stack
+			DEBUG_END_ECHO=''
+			__DEBUG__STACK__=''
+			;;
+
+		h|help|\?) # help requested
+			_Debug_Help_ "$DEBUG_SEPARATOR"
+			;;
+
+		q|quit|exit)
+			#=========================================
+			#     ! ! !   W A R N I N G   ! ! !
+			#=========================================
+			# aborts THE SCRIPT, not just _Debug_Step_
+			#=========================================
+			exit 0
+			;;
+
+		*)	# unknown fumbled-fingered input
+			echo "What?"
+			;;
+
+		esac
+
+		# do our end-of-command echo if necessary
+
+		[ "$DEBUG_END_ECHO" ] && echo
+
+	done
+
+	# reset the extglob state...
+
+	[ "${DEBUG_GLOB##* }" = "off" ] && shopt -u extglob
+
+	# (maybe) turn back on shell echoing...
+
+	[ "$DEBUG_RESET_VX" ] && set -vx
+
+	# and we're done
+}
+declare -Fx _Debug_Step_
+# NEVER SET TO -Ftx!
+
+#-----------------------------------------------------------
+# this is just to help clean up the code above, and to make
+# the help output a little easier to format -- all without
+# disturbing the format of the code above
+
+#:<
+#= _Debug_Help_
+#
+# IMPORTANT: Never call this function directly. It should be
+#            called only by the _Debug_Step_ function.
+#:>
+
+_Debug_Help_()
+{
+	local SEPARATOR="$1"
+echo "\
+DEBUG HELP:
+$SEPARATOR
+{ENTER}    execute next command
+?VAR       displays the value of VAR
+*VAR       all variables that start with VAR
+@VAR       all elements of array VAR
+=VAR:TXT   sets the value of VAR to TXT
+w, watch   edit the list of watched variables
+b, break   edit the list of break conditions
+           L:num  break at line 'num'
+           F:str  break at function 'str'
+           V:x=y  break when var 'x' == 'y'
+           V:x!y  break when var 'x' <> 'y'
+           V:x>y  break when var 'x' > 'y'
+           V:x<y  break when var 'x' < 'y'
+           NOTE: 'y' must be a literal value
+                 and not a varialbe reference
+f, funcs   list all function names, 1/line
+l, list    list all variable names, 1/line
+v, vars    show all variable names on 1 line
+env, set   display full environment in 'less'
+n, r       recall the next command display
+c, s       show the function call stack
+context    show the next command in context
+run        terminate debug mode, run normally
+verbose    use the default verbose prompt
+terse      use the terse (debug>) prompt
+source     view the current source in 'less'
+stack      display the call stack always
+nostack    do not display the call stack
+q, quit    quit the script (exit also works)
+h          this help (? or help also works)
+$SEPARATOR\
+"
+}
+declare -Fx _Debug_Help_
+# NEVER SET TO -Ftx!
+
+#-----------------------------------------------------------
+# call this to start tracing...
+
+#:<
+#= debug_on
+#
+# Called this to enable debug mode for bash scripts.
+#
+# notes:  THIS REQUIRES BASH 4.0 OR LATER.
+#
+#         The debugger is basic and ugly and prone to
+#         flakiness as you descend into functions and
+#         sourced files; however, it is quick, simple
+#         and works for lesser projects.
+#
+#         debug_on is a function, not an alias.
+#:>
+
+debug_on()
+{
+	trap '_Debug_Step_ "$FUNCNAME" "${BASH_SOURCE[0]}" "$LINENO"' DEBUG
+}
+declare -Fx debug_on
+# NEVER SET TO -Ftx!
+
+#-----------------------------------------------------------
+# might want to put a harness on these, but we assume
+# if debug is used that the following will be used, too
+
+shopt -q expand_aliases || shopt -s expand_aliases
+shopt -q extglob || shopt -s extglob
+
+#:<
+#= debug_off
+#
+# Call this to turn off debug mode.
+#
+# notes:  This can also be done "manually" by issuing the
+#         commands:
+#
+#             trap - DEBUG
+#             set +vx
+#
+#         debug_off is an alias, not a function.
+#:>
+
+alias debug_off='trap - DEBUG ; set +vx'
+
+#-----------------------------------------------------------
+# these are 'persistent' vars for debug - the values set in
+# them have to carry over between calls to _Debug_Step_
+
+export __DEBUG__RUN__=''
+export __DEBUG__VERBOSE__=Y
+export __DEBUG__STACK__=''
+export __DEBUG__WATCH__=''
+export __DEBUG__BREAK__=''
+
+#-----------------------------------------------------------
+#EOF(debug)

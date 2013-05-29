@@ -1,0 +1,54 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Module    : {{module}}
+# Location  : {{location */lib/bfw/src}}
+# Author    : {{author Author_Name <author@email.com>}}
+# Purpose   : {{purpose}}
+# Copyright (c) {{year}} {{owner YOU_OR_THE_ENTITY_THAT_OWNS_THE_WORK}}
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# notes go here
+#-----------------------------------------------------------
+# CHANGELOG
+#-----------------------------------------------------------
+# $Log$
+# * Thu May 16 2013 {{author}}
+# - Initial release.
+#-----------------------------------------------------------
+
+if [ -z "bfw_bash_framework" ]
+then
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+#:<
+#= your_function [option(s)]
+#
+# Describe briefly what the function does, is intended for,
+# and so forth
+#
+# where:  option(s)	briefly describe the options
+#
+# notes:  Use this area to describe the function and options
+#         in greater detail. Note that this text (between
+#         the #:< and #:> markers) is read by the 'bfwhat'
+#         tool. Be sure to note that basic syntax is denoted
+#         with the #= marker.
+#:>
+
+your_function()
+{
+  # module code here
+
+  # as much as possible avoid the use of hard coded paths,
+  # or the use of executables not a part of the standard
+  # execution search PATH
+}
+#declare -Ftx your_function
+
+#-----------------------------------------------------------
+#EOF({{module}})

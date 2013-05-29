@@ -1,0 +1,227 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Module    : stdin
+# Location  : */lib/bfw/src
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Functions to report stdin source and status.
+# Copyright (c) 2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# These fuctions are useful in CGI and filter scripts - any
+# script where extensive stdin processing occurs.
+#-----------------------------------------------------------
+# CHANGELOG
+#-----------------------------------------------------------
+# $Log$
+# * Thu May 16 2013 Scott Smith <scott@bashify.com>
+# - Initial release.
+#-----------------------------------------------------------
+
+if [ -z "bfw_bash_framework" ]
+then
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+#:<
+#= SHD="$(stdin_has_data)"
+#
+# Returns the first character of stdin, or 'EMPTY' if there
+# is no data waiting on stdin. This function cannot simply
+# return true/false, as it must consume at least 1 byte of
+# the stdin stream
+#
+# The caller can test for and output data on stdin via:
+#
+#     [ "$SHD" = "empty" ] || { echo -n "$SHD"; cat -; }
+#
+# See run_if_stdin() for proper usage.
+#:>
+
+stdin_has_data()
+{
+
+  if stdin_is_tty
+  then
+    echo "EMPTY"
+    return 1
+  else
+    local SHD="$(dd bs=1 count=1 2>/dev/null; echo "EMPTY")"
+    if [ "$SHD" = "EMPTY" ]
+    then
+      echo -n "$SHD"
+      return 1
+    else
+      echo -n "${SHD%EMPTY}"
+      return 0
+    fi
+  fi
+}
+declare -Ftx stdin_has_data
+
+#-----------------------------------------------------------
+
+#:<
+#= run_if_stdin && {command}
+#
+#+ Checks for data on stdin, and returns true or false. If
+#+ true, all of stdin is (re)output for {command} to read
+#:>
+
+run_if_stdin()
+{
+
+  local SHD="$(stdin_has_data)"
+
+  if [ "$SHD" = "EMPTY" ]
+  then
+    return 1
+  else
+    echo -n "$SHD" ; cat -
+    return 0
+  fi
+
+}
+declare -Ftx run_if_stdin
+
+#-----------------------------------------------------------
+
+#:<
+#= stdin_is_tty && echo TRUE
+#
+# Returns true if stdin is coming from a tty, which is in
+# most cases the user's interactive keyboard.
+#:>
+
+stdin_is_tty()
+{
+
+  if tty -s
+  then
+    local LINK="$(readlink /dev/fd/0)"
+    [ "$(stat --format=%F "$LINK")" = "character special file" ]
+  else
+    return 1
+  fi
+}
+declare -Ftx stdin_is_tty
+
+#-----------------------------------------------------------
+
+#:<
+#= stdin_is_file && echo TRUE
+#
+# Returns true if stdin is coming from a file.
+#:>
+
+stdin_is_file()
+{
+
+  if stdin_is_tty
+  then
+    return 1
+  else
+    local LINK="$(readlink /dev/fd/0)"
+    stat "$LINK" &>/dev/null
+  fi
+}
+declare -Ftx stdin_is_file
+
+#-----------------------------------------------------------
+
+#:<
+#= stdin_is_pipe && echo TRUE
+#
+# Returns true if stdin is coming from a pipe.
+#:>
+
+stdin_is_pipe()
+{
+
+  if stdin_is_tty
+  then
+    return 1
+  else
+    local LINK="$(readlink /dev/fd/0)"
+    [ "${LINK:0:5}" = "pipe:" ]
+  fi
+}
+declare -Ftx stdin_is_pipe
+
+#-----------------------------------------------------------
+
+#:<
+#= stdin_is_heredoc && echo TRUE
+#
+# Returns true if stdin is coming from a here document,
+# which is created via << and <<< redirection.
+#:>
+
+stdin_is_heredoc()
+{
+
+  if stdin_is_tty
+  then
+    return 1
+  else
+    local LINK="$(readlink /dev/fd/0)"
+    [ "${LINK##*(}" = "deleted)" ]
+  fi
+}
+declare -Ftx stdin_is_heredoc
+
+#-----------------------------------------------------------
+
+#:<
+#= stdin_type
+#
+# Returns the type of stdin currently active.
+#
+# type      description
+# --------  ----------------------------------------
+# tty       typically the console tty (keyboard)
+# file      redirected from a file (using: < file)
+# pipe      data is coming in via pip (cmd | cmd)
+# heredoc   date from here document (<< or <<<)
+# error     unrecognized input type
+#:>
+
+stdin_type()
+{
+  if stdin_is_tty
+  then
+    echo "tty"
+  elif std_is_file
+  then
+    echo "file"
+  elif std_is_pipe
+  then
+    echo "pipe"
+  elif std_is_heredoc
+  then
+    echo "heredoc"
+  else
+    echo "error"
+  fi
+}
+declare -Ftx stdin_source
+
+#-----------------------------------------------------------
+
+#:<
+#= VAR=$(stdin_source)
+#
+# Returns the filespec that is linked to /dev/fd/0 device.
+#:>
+
+stdin_source()
+{
+  readlink /dev/fd/0
+}
+declare -Ftx stdin_source
+
+#-----------------------------------------------------------
+#EOF(stdin)

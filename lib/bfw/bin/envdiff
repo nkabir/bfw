@@ -1,0 +1,220 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Program   : envdiff
+# Location  : ~/lib/bfw/bin
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Compare the environment before and after a
+#             COMMAND is executed and output the commands
+#             to recreate any environment changes.
+# Copyright (c) 2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+
+_envdiff_USAGE="usage:\t${0##*/} [--shell={sh|bash|csh|tcsh}] [--eval] [--export]\n\t[--all] [--set] [--unset] [--unsafe] [--ignore LIST] COMMAND"
+
+# defaults are for 'bash' w/o exporting, no eval, safe mode
+
+_envdiff_SHELL="bash"
+_envdiff_UNSETVAR="unset"
+_envdiff_SETVAR="declare"
+_envdiff_EXPORT=""
+_envdiff_UNSAFE=""
+_envdiff_IGNORE=""
+_envdiff_EVAL=""
+_envdiff_ONLY=""
+
+# these are ignored by default
+
+_envdiff_IGNORE_LIST="_ OLDPWD PS1 PS2 PS3 PS4 TTY"
+
+# these are the unsafe variables, skipped
+# unless the '--unsafe' option is provided
+
+_envdiff_UNSAFE_LIST="BASH BASHOPTS BASH_ALIASES BASH_ARGC BASH_ARGV BASH_CMDS BASH_LINENO BASH_SOURCE BASH_VERSINFO BASH_VERSION BASH_ENV COLUMNS DISPLAY ENV HOME LINES LOGNAME PWD SHELL SHLVL LANG LC_ALL LSB_ACCT_FILE LSB_CHKFILENAME LSB_JOBFILENAME LSB_JOBID LS_JOBPID SSH_ASKPASS SSH_CLIENT SSH_CONNECTION SSH_TTY TERM USER"
+
+# turn off grep coloring
+
+GREP_OPTIONS="--color=never"
+unset GREP_COLOR
+
+#-----------------------------------------------------------
+
+usage()
+{
+  local ERRCODE="$1"
+  echo -e "$_envdiff_USAGE"
+  (( ERRCODE > 0 )) && exit "$ERRCODE"
+}
+
+#-----------------------------------------------------------
+
+help()
+{
+_envdiff_USAGE="usage:\t${0##*/} [--shell={sh|bash|csh|tcsh}] [--eval] [--export]\n\t[--all] [--set] [--unset] [--unsafe] [--ignore LIST] COMMAND"
+  echo -e "
+$(usage 0)
+
+where:  --shell=        output for the specified shell
+        -s=             same as --shell=
+        -b, --bash      same as --shell=bash
+        -s, --sh        same as --shell=sh
+        -c, --csh       same as --shell=csh
+        -t, --tcsh      same as --shell=tcsh
+        -x, --export    output in 'export' form
+        -u, --unsafe    include unsafe vars in output
+        -a, --all       include everything in output
+        -e, --eval      prefix COMMAND with eval (ie, eval COMMAND)
+        -i, --ignore=   ignore the listed variable names
+        --set           only output 'set' commands
+        --unset         only output 'unset' commands
+        --help          output this help page
+        -h              help (ie, usage)
+
+notes:  The -i/--export option requires a space separated list
+        of variable names. Wildcards are not supported.
+
+        By default, the following variables are ignored:
+
+$(list_out "$_envdiff_IGNORE_LIST")
+
+        Unsafe variables are:
+
+$(list_out "$_envdiff_UNSAFE_LIST")
+
+        If COMMAND (and its options) do not require expansion,
+        then they can be set on the command line; otherwise,
+        quote the COMMAND and arguments and use --eval to do
+        the expansion.
+
+        Any variables starting with _envdiff_* are ignored at
+        all times, even when --unsafe and --all are used.
+"
+  exit 0
+}
+
+#-----------------------------------------------------------
+# used when the '--ignore=none' option is used
+
+set_ignore_list()
+{
+  case "$1" in
+  "") usage 2 ;;
+  none) unset _envdiff_IGNORE_LIST ;;
+  *) _envdiff_IGNORE_LIST+=" $1" ;;
+  esac
+}
+
+#-----------------------------------------------------------
+# output space delimited lists in column format
+
+list_out()
+{
+  tr " " "\n" <<<"$*" | column -c 56 | sed 's/^/\t\t/'
+}
+
+#-----------------------------------------------------------
+# parameter parsing
+
+while :
+do
+  case "$1" in
+  -b|--bash)   _envdiff_SHELL="bash" ;;
+  -s|--sh)     _envdiff_SHELL="sh" ;;
+  -c|--csh)    _envdiff_SHELL="csh" ;;
+  -t|--tcsh)   _envdiff_SHELL="csh" ;;
+  --shell=*)   _envdiff_SHELL="${1#*=}" ;;
+  -s=*)        _envdiff_SHELL="${1#*=}" ;;
+  -x|--export) _envdiff_EXPORT=Y ;;
+  -u|--unsafe) _envdiff_UNSAFE=Y ;;
+  -a|--all)    unset _envdiff_IGNORE_LIST _envdiff_UNSAFE_LIST ;;
+  -e|--eval)   _envdiff_EVAL="Y" ;;
+  -i) set_ignore_list ; shift ;;
+  --set)       _envdiff_ONLY="set" ;;
+  --unset)     _envdiff_ONLY="unset" ;;
+  --ignore=*) set_ignore_list "${1#*=}" ;;
+  --help) help ;;
+  -*|"") usage 1 ;;
+  *) _envdiff_COMMAND="$1" ; shift ; break ;;
+  esac
+  shift
+done
+
+case "$_envdiff_SHELL" in
+bash) [ "$_envdiff_EXPORT" ] \
+        && _envdiff_SETVAR="export" \
+        || _envdiff_SETVAR="declare"
+      ;;
+csh)  [ "$_envdiff_EXPORT" ] \
+        && _envdiff_SETVAR="setenv" \
+        || _envdiff_SETVAR="set"
+      ;;
+sh)   [ "$_envdiff_EXPORT" ] \
+        && _envdiff_SETVAR=":sh:" \
+        || _envdiff_SETVAR=""
+      ;;
+esac
+
+#-----------------------------------------------------------
+# transform our lists so they're eregex ready
+
+_envdiff_SKIP_LIST="$(echo "_envdiff_[^=]* $_envdiff_UNSAFE_LIST $_envdiff_IGNORE_LIST" | sed 's/^ *//;s/ *$//;s/  */|/g')"
+
+#-----------------------------------------------------------
+# capture the before environment
+
+_envdiff_BEFORE="$(set | egrep -v "^($_envdiff_SKIP_LIST)=" | sed '/.*() $/,/^}$/ d')"
+
+#-----------------------------------------------------------
+# run the command to execute
+
+if [ "$_envdiff_EVAL" ]
+then
+  eval "$@"
+else
+  "$_envdiff_COMMAND" "$@"
+fi
+
+# exit if error (non-zero) result from command
+
+[ $? -eq 0 ] || exit $?
+
+#-----------------------------------------------------------
+# capture the after environment
+
+_envdiff_AFTER="$(set | egrep -v "^($_envdiff_SKIP_LIST)=" | sed '/.*() $/,/^}$/ d')"
+
+#-----------------------------------------------------------
+# setup for outputting only set/unset/all lines
+
+_envdiff_ONLY="$_envdiff_UNSETVAR "
+_envdiff_ONLY_OPT=""
+
+case "$_envdiff_ONLY" in
+set)   _envdiff_ONLY_OPT="-v" ;;
+unset) : ;;
+#set)   _envdiff_ONLY="^$_envdiff_SETVAR " ;;
+#unset) _envdiff_ONLY="^$_envdiff_UNSETVAR "   ;;
+*)     _envdiff_ONLY=".*"      ;;
+esac
+
+#-----------------------------------------------------------
+# use comm to find lines that are only in the BEFORE and AFTER,
+# which comm lists in two columns, and the AFTER column is preceeded
+# with a tab (\t) character -- drop in the set/unset strings, then
+# use sort to make sure unsets are done before sets
+
+OUT="$(
+  comm -3 <(echo "$_envdiff_BEFORE") <(echo "$_envdiff_AFTER") \
+  | sed "
+    s/^[^\t]/$_envdiff_UNSETVAR${_envdiff_UNSETVAR:+ }&/
+    s/^\t\(.*\)/$_envdiff_SETVAR${_envdiff_SETVAR:+ }\1/
+    " \
+  | sed 's/^:sh: \([^=]*\)\(=.*\)/\1\2 ; export \1/' \
+  | sed '/^set/ s/=/ /'
+)"
+
+{ grep    "^unset " <<<"$OUT" | sort
+  grep -v "^unset " <<<"$OUT" | sort
+} | grep "$_envdiff_ONLY"
+
+#-----------------------------------------------------------
+#EOF(envdiff)

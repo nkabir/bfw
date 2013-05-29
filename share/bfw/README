@@ -1,0 +1,82 @@
+bfw - bash framework
+
+____________________________________________________________
+FRAMEWORK
+
+	./lib/bfw/start
+	./lib/bfw/bin/*
+	./lib/bfw/hlp/*
+	./lib/bfw/scr/*
+	./lib/bfw/sh/*
+
+____________________________________________________________
+CONFIGURATION
+
+	./etc/bfw/bfw.conf
+	./etc/bfw/{SCRIPT}.conf
+
+____________________________________________________________
+HELP
+
+	./lib/bfw/hlp/{SCRIPT}.HELP
+	./lib/bfw/hlp/{SCRIPT}.INFO
+	./lib/bfw/hlp/{SCRIPT}.USAGE
+
+____________________________________________________________
+EXECUTABLE
+
+	./bin/{SCRIPT} -> ../lib/bfw/start	(symlink)
+	./lib/bfw/bin/{SCRIPT} -> ../start	{symlink}
+
+____________________________________________________________
+PATH (SEARCH PATH)
+
+	./bin		this should be the location where
+			user-level scripts are linked
+
+	./lib/bfw/bin	this should be the location for
+			bfw scripts (actual or linked)
+
+	Include both in the path, with ./bin placed first.
+
+____________________________________________________________
+EXECUTION PATH
+
+1.  ./bin/{SCRIPT}		symlinks to
+2.  ./lib/bfw/start		sources
+3.  ./etc/bfw/bfw.conf		sources
+4.  ./etc/bfw/{SCRIPT}.conf	sources
+5.  ./etc/bfw/src/{modules}	sources
+6.  ./lib/bfw/sh/{SCRIPT}	user's code
+
+____________________________________________________________
+NOTES
+
+1.  All that should be created in ./bin and ./lib/bfw/bin
+    are symlinks.
+
+    The symlink {SCRIPT} name must correspond to both the
+    ./etc/bfw/{SCRIPT}.conf file and ./lib/bfw/bin/{SCRIPT}
+    file. This name also corresponds to the files in the
+    ./lib/bfw/hlp directory ({SCRIPT}.USAGE/HELP/INFO).
+
+2.  The 'start' script establishes the initial environment.
+
+3.  bfw.conf sets the common environment
+
+4.  {SCRIPT}.conf sets app-specific values and can override
+    the settings in bfw.conf.
+
+5.  The modules (configuratble in {SCRIPT}.conf) load the
+    function modules included with bfw.
+
+6.  ./lib/bfw/bin/{SCRIPT} houses the guts of the "program"
+
+____________________________________________________________
+BFW UTILITIES
+
+./lib/bfw/sh
+
+These are scripts that are included with bfw. Some use bfw,
+and some are stand-alone. All are symlinked in ./lib/bfw/bin
+

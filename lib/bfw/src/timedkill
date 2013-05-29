@@ -1,0 +1,105 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Module    : timedkill
+# Location  : */lib/bfw/src
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Monitors background processes and kills them
+#             if they exceed a specified timeout period.
+# Copyright (c) 2000-2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# notes go here
+#-----------------------------------------------------------
+# CHANGELOG
+#-----------------------------------------------------------
+# $Log$
+# * Thu May 16 2013 {{author}}
+# - Initial release.
+#-----------------------------------------------------------
+
+if [ -z "bfw_bash_framework" ]
+then
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+#:<
+#= timedkill PID TIMEOUT
+#
+# EXAMPLE 1:
+#
+# # This example will die naturally, because the runtime is
+# # less than the timeout. The background job dies before
+# # timedkill times out, so timedkill() == false.
+#
+# sleep 3 &>/dev/null &
+#
+# timedkill $! 5 &>/dev/null && echo killed || echo died
+#
+# EXAMPLE 2:
+#
+# # This example runs longer. When timedkill times out it
+# # finds the process still running and kills it, and so
+# # timedkill() == true.
+#
+# sleep 10 &>/dev/null &
+#
+# timedkill $! 5 &>/dev/null && echo killed || echo died
+#
+# EXAMPLE 3:
+#
+# # This would be a more typical usage -- can you get an
+# # ssh connection to a host? This is useful if you need to
+# # do automated processing that cannot get hung up waiting
+# # for an unresponsive target system.
+#
+# ssh -nt HOSTNAME 'command' &>/tmp/results.file.$$ &
+#
+# if timedkill $! 10 &>/dev/null
+# then
+#   echo "WARNING: ssh command timed out - take action"
+# else
+#   echo "SUCCESS: process the output in results file"
+# fi
+#
+# [ -f /tmp/results.file.$$ ] && rm -f /tmp/results.file.$$
+#:>
+
+timedkill()
+{
+  local PID="$1"
+  local DELAY="$2"
+  local SECONDS=1
+  local KILLPID=Y
+
+  until (( SECONDS > DELAY ))
+  do
+    if ps -p "$PID" | grep "^ *$PID " &>/dev/null
+    then
+      sleep 1
+      (( SECONDS++ ))
+    else
+      KILLPID=""
+      break
+    fi
+  done
+
+  if [ "$KILLPID" ]
+  then
+    kill "$PID"
+    ps -p "$PID" | grep "^ *$PID " &>/dev/null && {
+      sleep 1
+      kill -9 "$PID"
+    }
+    return 0
+  else
+    return 1
+  fi
+}
+declare -Ftx timedkill
+
+#-----------------------------------------------------------
+#EOF(timedkill)

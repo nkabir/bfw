@@ -1,0 +1,142 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Module    : getkey
+# Location  : */lib/bfw/src
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Provides filtered/validated single-key input
+# Copyright (c) 2005-2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# notes go here
+#-----------------------------------------------------------
+# CHANGELOG
+#-----------------------------------------------------------
+# $Log$
+# * Thu May 16 2013 Scott Smith <scott@bashify.com>
+# - Initial release.
+#-----------------------------------------------------------
+
+if [ -z "bfw_bash_framework" ]
+then
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+#:<
+#= wait_for_key KEY TIMEOUT [PROMPT]
+#
+# Waits for the user to press a key.
+#
+# where:  KEY      the key tye user should press
+#         TIMEOUT  number of seconds to wait for keypress
+#         PROMPT   message prompt to show the user
+#
+# notes:  Here is an example:
+#
+#         wait_for_key Y 30 "Ok? " && do_stuff
+#
+#         The example above does the following:
+#
+#         Prompt "Ok? " and wait up to 30 seconds for user to
+#         respond with a Y. Return O if key is Y, 1 if it
+#         is null (usually due to pressing Enter), or else 2.
+#         There is no output other than the prompt.
+#
+#         It is possible to wait for one of several keys by
+#         passing a list in brackets. This is mostly useful
+#         for accepting upper/lower case, such as "[Yy]".
+#
+#         The default timeout is 30 seconds.
+#:>
+
+wait_for_key()
+{
+    local lKey="$1"
+    local lWait="${2:-30}"
+    local lPrompt="$3"
+    local lRead lMatched
+
+    [ "$lPrompt" ] && echo -en "$lPrompt"
+
+    read -s -n 1 -t "$lWait" lRead
+
+    case "$lRead" in
+    $lKey) lMatched=0 ;;
+    "")    lMatched=1 ;;
+    *)     lMatched=2 ;;
+    esac
+
+    echo -en "\b"
+
+    return $lMatched
+}
+declare -Ftx wait_for_key
+
+#-----------------------------------------------------------
+
+#:<
+#= loop_for_key KEY TIMEOUT PROMPT LOOPS ENDCHAR
+#
+# Waits in a spinner loop for the user to press a key.
+#
+# where:  KEY      the key tye user should press
+#         TIMEOUT  number of seconds to wait for keypress
+#         PROMPT   message prompt to show the user
+#         LOOPS    maximum number of loops
+#         ENDCHAR  the character to display on exit
+#
+# notes:  Here is an example:
+#
+#         loop_for_key Y 1 "Ok? " 30 && do_stuff
+#
+#         The example above does the following:
+#
+#         Prompt "Ok? " and wait up to 1 second for user to
+#         respond. Return O if key is Y, else 1. Repeat loop
+#         up to 30 retries, whether due to timeouts or to
+#         invalid keys. Upon failure, write '.' if $5 not
+#         set, else write '+'.
+#
+#         A 'spinner' is displayed while waiting, and cycles
+#         at each timeout.
+#
+#         Total wait time is $2 * $4, so 1 * 30 = 30 seconds.
+#:>
+
+loop_for_key()
+{
+    local lKey="$1"
+    local lWait="$2"
+    local lPrompt="$3"
+    local lLoops="$4"
+    local lFound="$5"
+
+    local lMask='|/-\'
+    local lPos=0
+    local lTry=0
+    local lType
+
+    [ "$lFound" ] && lType="+" || lType="."
+
+    lMask="$lMask$lType"
+
+    echo -en "$lPrompt"
+
+    until (( lTry > lLoops ))
+    do
+        wait_for_key "$lKey" "$lWait" "${lMask:$lPos:1}" && return 0
+        (( lPos >= 3 )) && lPos=0 || (( lPos++ ))
+        (( lTry++ ))
+    done
+
+    echo -en "$lType"
+
+    return 1
+}
+declare -Ftx loop_for_key
+
+#-----------------------------------------------------------
+#EOF(getkey)

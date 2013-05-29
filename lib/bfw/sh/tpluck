@@ -1,0 +1,115 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Program   : tpluck
+# Location  : ~/lib/bfw/sh
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Read info from a bfw source module
+# Copyright (c) 2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+
+if [ "bfw_bash_framework" ]
+then
+  [ "${bfw[debug]}" = "ON" ] && debug_on
+  bfw_script_version "2013-05-28"
+else
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+USAGE=" usage:	${bfw[script]} [--help] tree_file branch_name"
+
+HELP="\
+where:	branch_name is the fully qualified path of the branch
+	to pluck out of the tree file, and if it does not begin
+	with a / it is assumed to be a subdirectory immediately
+	off the base path used to create the tree_file
+
+	If tree_file is '-' then read from stdin.
+"
+
+#-----------------------------------------------------------
+
+cleanup()
+{
+  rm -f /tmp/tpluck.$$.* &>/dev/null
+}
+
+#-----------------------------------------------------------
+
+case "$1" in
+--help) help ;;
+-*|"") usage ;;
+esac
+
+[ $# -eq 2 ] || usage
+
+SOURCE="$1"
+BRANCH="${2%/}"
+
+if [ "$SOURCE" = "-" ]
+then
+  SOURCE=/dev/stdin
+elif [ ! -f "$SOURCE" ]
+then
+  die 2 "\nerror:\tfile not found '$SOURCE'\n"
+fi
+
+# remove trailing / and . characters from BRANCH
+# and replace any repeating strings of / and . with a /
+
+BRANCH="$(sed 's#[./]*$##; s#/[./]*/#/#g' <<<"$BRANCH")"
+
+# error check to make sure we're doing something useful
+
+TOP="$(head -1 "$SOURCE")"
+[ "${BRANCH:0:1}" = "/" ] || BRANCH="$TOP/$BRANCH"
+
+[ "$TOP" = "$BRANCH" ] && die 3 "\nerror:\tbranch_name == tree_file base path\n\n\tthe branch name cannot be the same as the top level path\n\tused to create the tree file, which is:\n\n\t$TOP\n"
+
+CUT="${BRANCH#$TOP/}"
+[ "$CUT" = "$BRANCH" ] && die 4 "\nerror:\tbranch_name !~ tree file base path\n\n\tthe branch name does not contain the top level path used\n\tto create the tree file, which is:\n\n\t$TOP\n"
+
+#-----------------------------------------------------------
+
+# setup to allow plucking into about 20 levels deep
+#
+# DASHES is used to create the leader strings
+# LEVELS is a count of the '/' chars in the path to CUT
+# MAXDASH is the length of the leader for the CUT path
+# SHRINK is used to trim out excess leader in the output
+
+DASHES="----------------------------------------"
+
+LEVELS=$(( $(tr -c -d / <<<"$CUT" | wc -c) + 1 ))
+
+MAXDASH=$(( LEVELS * 2 - 1 ))
+
+SHRINK="-${DASHES:0:$MAXDASH}"
+
+# split the CUT path into an array, used in the 'for' loop
+
+oIFS="$IFS" IFS=/ SEG=(root $CUT) IFS="$oIFS"
+
+# start reading the input and cycle through each path level in CUT
+
+F1="$SOURCE"
+
+for ((n=1; n<=$LEVELS; n++))
+do
+  F2="/tmp/tpluck.$$.$n"
+  PREFIX="${DASHES:0:$((n*2-1))}"
+  sed "0,/^|$PREFIX${SEG[$n]}$/ d" <"$F1" >"$F2"
+  F1="$F2"
+done
+
+# each segment is processed, echo the full BRANCH and then
+# trim the bottom of the temp file of bits outside the range
+
+echo "$BRANCH"
+sed -r "/^\|-{1,$MAXDASH}[^-]/,$ d; s/^\|$SHRINK/|/" <"$F1"
+
+die 0 -
+
+#EOF(tpluck)

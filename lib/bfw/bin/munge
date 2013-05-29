@@ -1,0 +1,302 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Program   : munge
+# Location  : ~/lib/bfw/bin
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Munges strings in/out of an existing string,
+#             typically a PATH or MANPATH style string.
+# Copyright (c) 2006-2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+
+USAGE="usage:\t${0##*/} [-d char] [--delimit=char] [-a] [--after]
+\t[-b] [--before] [-f] [--force] [-nf] [--no-force] [-r] [--remove]
+\t[-nr] [--no-remove] [-s] [--strip] [-ns] [--no-strip]
+\t[-c] [--clean] [--exists] OLDSTRING {[options] NEWSTRING}..."
+
+[ $# -eq 0 ] && { echo -e "$USAGE"; exit 1; }
+
+#-----------------------------------------------------------
+# $Log$
+# * Fri Dec 14 2012 Scott Smith <scott@bashify.com>
+# - Added --clean option to remove duplicate strings.
+# - Added --exists option to remove non-directory strings.
+# * Mon Aug 27 2012 Scott Smith <scott@bashify.com>
+# - Fixed use of literal ':' to used --delim char.
+# - Fixed bug where -s STRING would actually add
+#   STRING if it did not already exist
+# - Added missing options to USAGE.
+# - Added --help option and help text.
+# - Changed -n, -k and -o to -nf, -nr and -ns
+#
+# * Tue May 15 2012 Scott Smith <scott@bashify.com>
+# - Added -s|--strip -o|--no-strip (once) option.
+#
+# * Sun May 13 2012 Scott Smith <scott@bashify.com>
+# - Added -r|--remove -k|--no-remove (keep) options.
+#
+# * Mon Jul 10 2006 Scott Smith <scott@bashify.com>
+# - Initial release.
+#-----------------------------------------------------------
+
+#-----------------------------------------------------------
+# define commonly modified configurable constants/variables
+#-----------------------------------------------------------
+
+DELIM=":"       # default delimiter character
+
+#-----------------------------------------------------------
+
+HELP="
+$USAGE
+
+where:	-d  --delimit=char
+		Set the delimiter to 'char' (default is :)
+	-a  --after
+		Place the NEWSTRING after OLDSTRING, but does
+		not reposition the string if it already exists
+		(see --force.)
+	-b  --before
+		Place the NEWSTRING before OLDSTRING, but does
+		not reposition the string if it already exists
+		(see --force.)
+	-f  --force
+		Repositions the string (before or after) if it
+		already exists. This is the same as performing
+		'--remove NEWSTRING --{before|after} NEWSTRING'.
+	-nf  --no-force
+		Turns off --force mode.
+	-r  --remove
+		Removes the first instance of NEWSTRING from
+		 OLDSTRING. (See --strip to remove all.)
+	-nr --no-remove
+		Turns off --remove mode.
+	-s  --strip
+		Removes NEWSTRING from OLDSTRING, recusively.
+		(See --remove to remove just one instance.)
+	-ns --no-strip
+		Turns off --strip mode.
+	-o  --once
+		Makes sure only one instance of the string
+		exists, placed according to the before/after
+		setting. Roughly equivalent to this sequence:
+		--strip STRING --{before|after} STRING
+	-no --no-once
+		Turns off --once mode.
+	-c  --clean
+		Removes duplicates from the string, but does
+		not change the order in which they occur. The
+		first instance is retained, any duplicates are
+		dropped. (See --exists for more.)
+	--exists
+		Removes elements from the string that are not
+		directories. This provides a quick way to drop
+		invalid paths from a PATH string.
+	-h  --help
+		Use -h for usage, --help for this page.
+	OLDSTRING
+		The string to be munged.
+	NEWSTRING
+		The new string(s) to add/remove.
+
+notes:	Note that options are 'sticky'. Once you set an option,
+	it remains in effect until it is changed or turned off.
+
+	Multiple instances of all options can be used, and will
+	take effect from that point. This allows multiple edits
+	to be made in one pass. For example:
+
+	${0##*/} \$PATH -r /usr/local/bin -a ~/bin -f -b /site/bin
+
+	Setting -r, -s or -o turns off the other two. Turning off
+	the last one set means they are all turned off.
+"
+
+#-----------------------------------------------------------
+# define functions
+#-----------------------------------------------------------
+
+de_dup()
+{
+    local OLDSTR="$1"
+    local NEWIFS="${2:-:}"
+    local OLDIFS="$IFS"
+    local NEWSTR STR
+
+    IFS="$NEWIFS"
+
+    NEWSTR="$IFS"
+    
+    for STR in $OLDSTR
+    do
+        [ "$STR" ] || continue
+        fgrep "$IFS$STR$IFS" <<<"$NEWSTR" &>/dev/null && continue
+        NEWSTR+="$STR:"
+    done
+
+    IFS="$OLDIFS"
+
+    sed 's/.\(.*\)./\1/' <<<"$NEWSTR"
+}
+
+#-----------------------------------------------------------
+
+is_dir()
+{
+    local OLDSTR="$1"
+    local NEWIFS="${2:-:}"
+    local OLDIFS="$IFS"
+    local NEWSTR STR
+
+    IFS=:
+
+    NEWSTR="$IFS"
+    
+    for STR in $OLDSTR
+    do
+        [ "$STR" ] || continue
+        [ -d "$STR" ] || continue
+        NEWSTR+="$STR:"
+    done
+
+    IFS="$OLDIFS"
+
+    sed 's/.\(.*\)./\1/' <<<"$NEWSTR"
+}
+
+#-----------------------------------------------------------
+# define main application logic
+#-----------------------------------------------------------
+
+###
+### varible presets
+###
+
+BEFORE=""       # if not null, prepend strings rather than append
+REMOVE=""       # if not null, remove strings and don't (pre/ap)pend
+FORCE=""        # if not null, if string exists move it to before/after
+REMOVE=""	# if not null, remove the first occurance of newstring
+STRIP=""	# if not null, remove all occurances of newstring
+ONCE=""		# if not null, only one instance of string, placed
+		#              according to before/after setting
+DEDUP=""	# if not null, remove duplicate strings
+ISDIR=""	# if not null, remove non-directory strings
+
+OLD=""
+NEW=""
+OUT=""
+
+###
+### main code loop
+###
+
+while [ "$1" ]
+do
+
+    while :
+    do
+        # parse for parameters
+        case "$1" in
+        -d) DELIM="$2" ; shift ;;
+        --delim=*) DELIM="${2#*=}" ;;
+        -b|--before) BEFORE="Y" ;;
+        -a|--after) BEFORE="" ;;
+        -f|--force) FORCE="Y" ;;
+        -nf|--no-force) FORCE="" ;;
+        -r|--remove) REMOVE="Y" ; STRIP="" ; ONCE="" ;;
+        -nr|--no-remove) REMOVE="" ;;
+        -s|--strip) STRIP="Y" ; REMOVE="" ; ONCE="" ;;
+        -ns|--no-strip) STRIP="" ;;
+        -o|--once) ONCE="Y" ; REMOVE="" ; STRIP="" ;;
+        -no|--no-once) ONCE="" ;;
+        -c|--clean) DEDUP="Y" ;;
+	--exists) ISDIR="Y" ;;
+	--help) echo -e "$HELP" ; exit 0 ;;
+	-h) echo -e "$USAGE" ; exit 0 ;;
+        -*) echo -e "$USAGE" ; exit 1 ;;
+        *) OLD="$OUT" ; NEW="$1" ; shift ; break ;;
+        esac
+        shift
+    done
+
+    if [ -z "$OLD" ]
+    then
+        # no old string
+        OUT="$NEW"
+        continue
+    elif [ -z "$NEW" ]
+    then
+        # no new string
+        OUT="$OLD"
+        continue
+    fi
+
+    D="$DELIM"
+    KEY="${D}${NEW}${D}"
+
+    if /bin/fgrep "$KEY" <<<"$D$OLD$D" &>/dev/null
+    then
+	# request to de-dup the old string
+        if [ "$DEDUP" ]
+        then
+            OLD="$(de_dup "$OLD" "$DELIM")"
+	# request to drop non-directories from the old string
+        elif [ "$ISDIR" ]
+        then
+            OLD="$(is_dir "$OLD" "$DELIM")"
+        # new string FOUND in old string
+        elif [ "$REMOVE" ]
+        then
+            # strip the first instance of new and process the next option
+            OLD="$(sed "s#$KEY#${D}#; s#^${D}##; s#${D}\$##" <<<"$D$OLD$D")"
+            OUT="$OLD"
+            continue
+        elif [ "$STRIP" ]
+        then
+            # strip the all occurances of new from old...
+            while /bin/fgrep "$KEY" <<<"$D$OLD$D" &>/dev/null
+            do
+                OLD="$(sed "s#$KEY#${D}#; s#^${D}##; s#${D}\$##" <<<"$D$OLD$D")"
+            done
+            # ...and process the next option
+            OUT="$OLD"
+            continue
+        elif [ "$ONCE" ]
+        then
+            # strip all occurances and let before/after happen
+            while /bin/fgrep "$KEY" <<<"$D$OLD$D" &>/dev/null
+            do
+                OLD="$(sed "s#$KEY#${D}#; s#^${D}##; s#${D}\$##" <<<"$D$OLD$D")"
+            done
+        elif [ "$FORCE" ]
+        then
+            # force enabled, strip fist instance of the new
+            # and let before/after happen
+            OLD="$(sed "s#$KEY#${D}#; s#^${D}##; s#${D}\$##" <<<"$D$OLD$D")"
+        else
+            # no force, no change (leave NEW where it is)
+            continue
+        fi
+    else
+        # new string NOT FOUND in old string
+       [ "$REMOVE$STRIP" ] && continue
+    fi
+
+    # place new string before/after old
+
+    OLD="$(sed 's/^:*// ; s/:*$//'<<<"$OLD")"
+
+    if [ "$BEFORE" ]
+    then
+        # new string BEFORE old string
+        OUT="${NEW}${D}${OLD}"
+    else
+        # new string AFTER old string
+        OUT="${OLD}${D}${NEW}"
+    fi
+
+done
+
+[ "$OUT" ] && echo "$OUT"
+
+#-----------------------------------------------------------
+#EOF(munge)

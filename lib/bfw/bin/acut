@@ -1,0 +1,80 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Program   : acut
+# Location  : ~/lib/bfw/bin
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : An awk-like 'cut' (because it uses awk!)
+# Copyright (c) 2008-2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+
+USAGE="\
+usage:	${0##*/} [ifs=string] [ofs=string] [fld ...]"
+
+HELP="
+name:	${0##*/} (awk cut - 2013.02.06)
+
+$USAGE
+
+where:	fld = 0		the entire input line
+	fld = 1-99	field number 'fld'
+	fld = N		the last (Nth) field
+	fld = N-n	field 'n' from the last (n = 0-99)
+	fld = -n	field 'n' from the last (n = 0-99)
+	fld = NF	the literal number of fields
+	fld = N0	number of fields + input line
+"
+#-----------------------------------------------------------
+# parameter parsing
+
+InputFS=""
+OutputFS=""
+
+while :
+do
+	case "$1" in
+	IFS=*|ifs=*) InputFS="${1#*=}" ;;
+	OFS=*|ofs=*) OutputFS="${1#*=}" ;;
+    --help) echo -e "$HELP" ; exit 0 ;;
+    -h) echo -e "$USAGE" ; exit 0 ;;
+	*) break ;;
+	esac
+	shift
+done
+
+[ "$1" ] || {echo -3 "$USAGE" ; exit 1; }
+
+#-----------------------------------------------------------
+# build list of fields to print (for awk)
+
+[ "$OutputFS" ] && OutputFS="\"$OutputFS\"" || OutputFS='" "'
+
+for FLD in "$@"
+do
+	case "$FLD" in
+	[0-9]|[1-9][0-9]) FLD="\$$FLD" ;;
+	[Nn]-[0-9]|[Nn]-[1-9][0-9]) FLD="\$(NF-${FLD#*-})" ;;
+	-[0-9]|-[1-9][0-9]) FLD="\$(NF-${FLD#*-})" ;;
+	[Nn]) FLD="\$NF" ;;
+	[Nn][Ff]) FLD="NF" ;;
+	[Nn]0) FLD="NF$OutputFS\$0" ;;
+	*) echo "error: invalid field specifier $FLD"; usage 1 ;;
+	esac
+	if [ "$FLDS" ]
+	then
+		FLDS="$FLDS$OutputFS$FLD"
+	else
+		FLDS="$FLD"
+	fi
+done
+
+#-----------------------------------------------------------
+# pass through to awk
+#
+# note that empty lines are passed thru as blanks, which
+# prevents (some, not all) problems using the 'N-n' forms
+# ie, awk's $(NF-n) construct
+
+awk ${InputFS:+-F "$InputFS"} "{ if (NF>1) print $FLDS ; else print \"\" }"
+
+#-----------------------------------------------------------
+#EOF(acut)

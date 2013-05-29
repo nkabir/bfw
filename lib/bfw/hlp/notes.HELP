@@ -1,0 +1,32 @@
+name:	{{script}} (notes - 2013.04.26)
+
+where:	option	--find	all following arguments are search words
+		--file	use a file other than 'notes'
+		--view	view the entire file (no search)
+		--edit	edit the specified file
+		--make	start a new notes file
+		--all	search (or view or edit) all available files
+		--list	show the available notes files
+		--brief	do not include before/after context for matches
+		--only	like --brief, but also w/o headers/footers
+
+	text	the string or topic keyword(s) to find
+                (if 'text' begins with '@' then only the topics are
+		are searched; otherwise, the entire file is searched)
+
+notes:	If --file is not specified, then the default 'notes.txt' is used.
+
+	To edit notes named 'mynotes':	{{script}} --edit mynotes
+
+	To make a new notes file:	{{script}} --make newfile
+	This is the same as:		{{script}} --edit --file newfile
+
+	To view a file read-only:	{{script}} --view [--file mynotes]
+
+	To find topics about scrum:	{{script}} @scrum
+
+	To find any scrum references:	{{script}} scrum
+
+	To find scrum in all notes	{{script}} --all scrum
+
+	To find --edit in all notes	{{script}} --all --find --edit

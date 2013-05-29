@@ -1,0 +1,11 @@
+name:	{{script}} (bfw whatis - 2013.04.26)
+
+where:	--list		list the functions in the specified module
+	--usage		display the function's usage (syntax)
+	--info		display the function help information
+	--code		when a function is specified, show the code
+	module		the source module to check, or 'all' to look
+			in all source modules
+	function	function to show usage, info or code for
+
+notes:	--code includes --info, which includes --usage.

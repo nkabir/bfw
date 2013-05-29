@@ -1,0 +1,48 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Program   : {{script}}
+# Location  : {{location */lib/bfw/sh}}
+# Author    : {{author Author_Name <author@email.com>}}
+# System    : {{system Name of software system (if script is part of a larger system)}}
+# Purpose   : {{purpose Purpose of program}}
+# Copyright (c) {{year}} {{owner YOU_OR_THE_ENTITY_THAT_OWNS_THE_WORK}}
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# notes go here
+#-----------------------------------------------------------
+# CHANGELOG
+#-----------------------------------------------------------
+# $Log$
+# * Thu May 16 2013 {{author}}
+# - Initial release.
+#-----------------------------------------------------------
+
+if [ -z "bfw_bash_framework" ]
+then
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+# define in script, or in the 'hlp' directory as:
+#
+#     bfw[hlp]/bfw[script].USAGE
+#     bfw[hlp]/bfw[script].HELP
+#     bfw[hlp]/bfw[script].INFO
+
+USAGE="\
+usage:	${bfw[script]} [-h] [--help] options"
+
+HELP="\
+name:	${bfw[script]} (bfw script_name - 2013.05.16)
+
+where:	-h		display the usage (syntax)
+	--help		display the help information
+	options		options briefly explained here
+
+notes:	things you need to explain in more detail here
+"
+
+#-----------------------------------------------------------

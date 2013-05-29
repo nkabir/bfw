@@ -1,0 +1,51 @@
+#!/bin/bash
+#-----------------------------------------------------------
+
+START=$$
+VERBOSE=""
+OUTPUT=pid
+
+while :
+do
+  case "$1" in
+  --user|--uid|-u) OUTPUT=uid ;;
+  --verbose|-v) VERBOSE=Y ;;
+  --pid|-p) START="$2" ; shift ;;
+  "") break ;;
+  *) echo "usage: ${0##*/} [--verbose] [--pid PID]" ; exit 1 ;;
+  esac
+  shift
+done
+
+#-----------------------------------------------------------
+
+BASEPID="$START"
+CURPID="$START"
+PS_OPT=""
+
+until (( CURPID <= 1 ))
+do
+  [ "$VERBOSE" ] && ps $PS_OPT -f $CURPID
+  PS_OPT="--no-header"
+  [[ "$(ps -o comm= $CURPID)" =~ ^(su|sudo)$ ]] && BASEPID=$CURPID
+  CURPID="$(ps -o ppid= $CURPID)"
+done
+
+if [ "$VERBOSE" ]
+then
+  echo
+  CURPID="$(ps -o ppid= $BASEPID)"
+  ps $PS_OPT -f $CURPID
+  echo
+  echo -n "Base PID: "
+fi
+
+if [ "$OUTPUT" = "uid" ]
+then
+  ps -o user= $(ps -o ppid= $BASEPID)
+else
+  ps -o ppid= $BASEPID
+fi
+
+#-----------------------------------------------------------
+#EOF

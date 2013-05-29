@@ -1,0 +1,76 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Module    : pathmunge
+# Location  : */lib/bfw/src
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Provide a foreach similar to other languages
+# Copyright (c) 2005-2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# Note that a path is only added if the directory exists.
+#
+# Examples:
+#
+# PATH=/usr/bin:/bin
+# pathmunge /root/bin
+# echo $PATH
+# /root/bin:/usr/bin:/bin        <-- path added at beginning
+# pathmunge . after
+# echo $PATH
+# /root/bin:/usr/bin:/bin:.      <-- path added at end
+# pathmunge /root/bin after
+# echo $PATH
+# /root/bin:/usr/bin:/bin        <-- path exists, no change
+#-----------------------------------------------------------
+# CHANGELOG
+#-----------------------------------------------------------
+# $Log$
+# * Thu May 16 2013 {{author}}
+# - Initial release.
+#-----------------------------------------------------------
+
+if [ -z "bfw_bash_framework" ]
+then
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+#:<
+#= pathmunge DIRECTORY [after]
+#
+# OBSOLETE: Use the 'munge' script instead.
+#
+# Munge the PATH with a new directory. Prepended, unless the
+# 'after' option is supplied.
+#
+# where:  DIRECTORY  is a directory name to add to PATH
+#         after      if specified, append rather than prepend
+#
+# notes:  The DIRECTORY is only added if it exists and is
+#         not already present in the PATH.
+#:>
+
+pathmunge()
+{
+  if [ -d "$1" ]
+  then
+    : # not a directory? don't add
+  elif ! /bin/egrep "(^|:)$1($|:)" &>/dev/null <<<"$PATH"
+  then
+    : # already in PATH? don't add
+  elif [ -z "$PATH" ]
+  then
+    # no PATH, so $1 is the new PATH
+    PATH="$1"
+  else
+    # (pre|ap)pend the new directory
+    [ "$2" = "after" ] && PATH="$PATH:$1" || PATH="$1:$PATH"
+  fi
+}
+declare -Ftx pathmunge
+
+#-----------------------------------------------------------
+#EOF(pathmunge)

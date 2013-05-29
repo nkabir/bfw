@@ -1,0 +1,287 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Module    : getvar
+# Location  : */lib/bfw/src
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Provides filtered/validated string input.
+# Copyright (c) 2005-2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# notes go here
+#-----------------------------------------------------------
+# CHANGELOG
+#-----------------------------------------------------------
+# $Log$
+# * Thu May 16 2013 Scott Smith <scott@bashify.com>
+# - Initial release.
+#-----------------------------------------------------------
+
+if [ -z "bfw_bash_framework" ]
+then
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+#:<
+#= getvar [--var varname] [--prompt promptstr] [--default defaultstr] [--lcase] [--ucase] [--pcase] [--null] [--exclude charlist] [--limit charlist] [--valid opt1:opt2:...optN] [--noquit] [--showvar] [--help "help text"]
+#
+# Get a value into a variable, using filters and validation.
+#
+# where:  --var      name of the variable to store input in
+#         --prompt   the prompt to display to the user
+#         --default  the default value for the input
+#         --lcase    force the input to lower case
+#         --ucase    force the input to upper case
+#         --pcase    force the input to proper case
+#         --null     allow null (empty) input
+#         --exclude  do not allow characters in charlist
+#         --limit    only allow characters in charlist
+#         --valid    input must match the option list
+#         --noquit   user cannot quit using a quit char
+#         --showvar  show the variable value after the prompt
+#         --help     display help text if user enters '?'
+#
+# notes:  For simple inputs, no parameters are needed. The
+#         varname used will be "REPLY" and the prompt will
+#         be "INPUT: ".
+#
+#         Be careful of special characters in the --default.
+#         It is best to stick with alphanumerics and a small
+#         subset of punctuation characters.
+#
+#         The --exclude option requires one of the following
+#         parameters: alnum, alpha, digit, ucase or lcase.
+#
+#         The --limit option requires one of the following
+#         parameters: alnum, alpha, digit, ucase, lcase,
+#         yesno, email, file, path, text, name, date, time,
+#         time12, time24 or xy
+#
+#         The --valid option requires a list of inputs that
+#         are valid, separated by colons: For example:
+#
+#             getvar --valid "yes:no:maybe"
+#
+#         Unless --noquit is specified, the user can abort
+#         the input loop by entering one of the following
+#         quit characters:
+#
+#             Q  q  -  .
+#
+#         The --showvar option causes the current value of
+#         the variable VARNAME to be displayed after the
+#         prompt, like this:
+#
+#             $ myvar=Y
+#             $ getvar myvar --showvar
+#             INPUT: Y_
+#
+#         The --help option allows a help message to display
+#         when the user enters a '?' as the field value.
+#:>
+
+getvar()
+{
+	# syntax: getvar [--var varname] [--prompt prompt]
+        #                [--default defaultstr] [--showvar]
+	#                [--lcase] [--ucase] [--pcase] [--null]
+	#                [--exclude charlist] [--limit charlist]
+	#                [--valid opt1:opt2:...optN] [--noquit]
+	#                [--showvar] [--help "help text"]
+
+	local VARNAME=""
+	local PROMPT=""
+	local SHOWVAR=""
+	local REQUIRED=Y
+	local DEFAULT=""
+	local EXCLUDE=""
+	local LIMIT=""
+	local VALID=""
+	local theStr=""
+	local newStr=""
+	local CASE=M
+	local QUIT=Y
+	local HELP=N
+	local HELPTEXT=""
+
+	while :
+	do
+		# note: normal break out of this loop
+		# would be when $3 is null -- but we
+		# are also going to break whenever an
+		# unrecognized option is found
+		case "$1" in
+		--var) VARNAME="$2" ; shift ;;
+		--prompt) PROMPT="$2" ; shift ;;
+		--default) DEFAULT="$2" ; shift ;;
+		--exclude) EXCLUDE="$2" ; shift ;;
+		--limit) LIMIT="$2" ; shift ;;
+		--valid) VALID="$2" ; shift ;;
+		--null) REQUIRED=N ;;
+		--lcase) CASE=L ;;
+		--ucase) CASE=U ;;
+		--pcase) CASE=P ;;
+		--noquit) QUIT=N ;;
+		--showvar) SHOWVAR=Y ;;
+		--help) HELP=Y ; HELPTEXT="$2" ; shift ;;
+		"") break ;;
+		*) break ;;
+		esac
+		shift
+	done
+
+	[ "$VARNAME" ] || VARNAME="REPLY"
+	[ "$PROMPT" ] || PROMPT="INPUT"
+
+	# input cannot contain these characters
+	case "$EXCLUDE" in
+	alnum) EXCLUDE="[0-9A-Za-z]" ;;
+	alpha) EXCLUDE="[A-Za-z]" ;;
+	digit) EXCLUDE="[0-9]" ;;
+	ucase) EXCLUDE="[A-Z]" ;;
+	lcase) EXCLUDE="[a-z]" ;;
+        *) : ;;
+	esac
+
+	# input can only contain these characters
+	case "$LIMIT" in
+	alnum)  LIMIT="[0-9A-Za-z]" ;;
+	alpha)  LIMIT="[A-Za-z]" ;;
+	digit)  LIMIT="[0-9]" ;;
+	ucase)  LIMIT="[A-Z]" ;;
+	lcase)  LIMIT="[a-z]" ;;
+	yesno)  LIMIT="[YyNn]" ;;
+	email)  LIMIT="[0-9A-Za-z]@_.-" ;;
+	file)   LIMIT="[0-9A-Za-z] @%()_.:-" ;;
+	path)   LIMIT="[0-9A-Za-z] ~@%()_./:-" ;;
+	text)   LIMIT="[0-9A-Za-z] ~@#%()_+=:,.<>?/-" ;;
+	name)   LIMIT="[A-Za-z0-9] .,-" ;;
+	date)   LIMIT="[0-9]/-" ;;
+	time)   LIMIT="[0-9]:.apm" ;;
+	time12) LIMIT="[0-9]:.apm" ;;
+	time24) LIMIT="[0-9]:." ;;
+	xy)     LIMIT="[0-9]x" ;;
+        *) : ;;
+	esac
+
+	local RETRY=Y
+
+	while [ "$RETRY" = "Y" ]
+	do
+
+		RETRY=Y
+
+		INPUT="${!VARNAME}"
+		INPUT="${INPUT:-$DEFAULT}"
+
+		echo -e "$PROMPT${SHOWVAR:+ ($INPUT)}: \c"
+		read -e -i "$INPUT" $VARNAME
+
+		# user exit test
+		if [ "$QUIT" = "Y" ]
+		then
+			case "${!VARNAME}" in
+			Q|q|-|.) # user exit
+				die 1 "\nTerminated by user input (${!VARNAME})\n"
+				;;
+			*) : ;;
+			esac
+		fi
+				
+		# help text test
+		if [ "$HELP" = "Y" -a "${!VARNAME}" = "?" ]
+		then
+			# display help text
+			echo -e "\n$HELPTEXT\n"
+			continue
+		fi
+
+		# general tests
+		case "${!VARNAME}" in
+		"")
+			# null input - check for a default
+			if [ -n "$DEFAULT" ]
+			then
+				RETRY=N
+				eval $VARNAME="\$DEFAULT"
+			elif [ "$REQUIRED" = "N" ]
+			then
+				RETRY=N
+			fi
+			;;
+		*)
+			# must have some kind of input
+			RETRY=N
+			;;
+		esac
+
+		[ "$RETRY" = "Y" ] && continue
+
+		# check for character validations
+
+		if [ -n "$LIMIT" ]
+		then
+			newStr="$(echo "${!VARNAME}" | tr -d "$LIMIT")"
+			if [ -n "$newStr" ]
+			then
+				echo "error: input contains invalid characters"
+				RETRY=Y
+			else
+				RETRY=N
+			fi
+		elif [ -n "$EXCLUDE" ]
+		then
+			theStr="${!VARNAME}"
+			newStr="$(echo "${!VARNAME}" | tr -d "$EXCLUDE")"
+			if [ "$theStr" != "$newStr" ]
+			then
+				echo "error: input contains invalid characters"
+				RETRY=Y
+			else
+				RETRY=N
+			fi
+		fi
+
+		[ "$RETRY" = "Y" ] && continue
+
+		# perform any requested case conversions
+
+		case "$CASE" in
+		U)	# upper case
+			newStr="$(ucase "${!VARNAME}")"
+			eval $VARNAME="\$newStr"
+			;;
+		L)	# lower case
+			newStr="$(lcase "${!VARNAME}")"
+			eval $VARNAME="\$newStr"
+			;;
+		P)	# proper case
+			newStr="$(pcase "${!VARNAME}")"
+			eval $VARNAME="\$newStr"
+			;;
+		*)	# mixed case
+			:
+			;;
+		esac
+
+		# compare against list (if any) of valid results
+
+		if [ -n "$VALID" ]
+		then
+			if echo ":$VALID:" | fgrep ":${!VARNAME}:" &>/dev/null
+			then
+				RETRY=N
+			else
+				echo "error: invalid input string"
+				RETRY=Y
+			fi
+		fi
+	done
+}
+declare -Ftx getvar
+
+#-----------------------------------------------------------
+#EOF(getvar)

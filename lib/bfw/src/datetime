@@ -1,0 +1,274 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Program   : datetime
+# Location  : ~/lib/bfw/src
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Date and time computations
+# Copyright (c) 2005-2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# notes go here
+#-----------------------------------------------------------
+# CHANGELOG
+#-----------------------------------------------------------
+# $Log$
+# * Thu May 16 2013 {{author}}
+# - Initial release.
+#-----------------------------------------------------------
+
+if [ -z "bfw_bash_framework" ]
+then
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+#:<
+#= seconds2days SECONDS
+#
+# Converts a number of seconds to a number of days.
+#
+# where:  SECONDS is the number of seconds (this is NOT a
+#         number of seconds since Unix epoch)
+#
+# notes:  This is an integer number of days, and the result
+#         truncated, not rounded.
+#:>
+
+seconds2days()
+{
+  # 60 sec/min * 60 min/hr * 24 hr/day = 86400
+  echo "$(( $1 / 86400))"
+}
+declare -Ftx seconds2days
+
+#-----------------------------------------------------------
+
+#:<
+#= daysFromTo START_DATE END_DATE
+#
+# Returns the number of days between two dates.
+#
+# where:  START_DATE  is the first date
+#         END_DATE    is the second date
+#
+# notes:  Dates are specified as seconds since epoch
+#
+#         For example:
+#
+#         daysFromTo $(date2epoch 2013-04-20) $(date2epoch 2013-12-25)
+#:>
+
+daysFromTo()
+{
+  local startDate="$(seconds2days "$1")"
+  local endDate="$(seconds2days "$2")"
+  echo "$(( endDate - startDate ))"
+}
+declare -Ftx daysFromTo
+
+#-----------------------------------------------------------
+
+#:<
+#= date2epoch DATE_STRING
+#
+# Convert a date string to the number of seconds since the
+# Unix epoch (January 1, 1970 at 00:00).
+#
+# where:  DATE_STRING is any string compatible with the GNU
+#         'date --date=DATE_STRING' command.
+#
+# notes:  This is a synonym for date2seconds().
+#:>
+
+date2epoch()
+{
+  echo "$(date --date="$*" +%s)"
+}
+declare -Ftx date2epoch
+
+#-----------------------------------------------------------
+
+#:<
+#= date2seconds DATE_STRING
+#
+# Convert a date string to the number of seconds since the
+# Unix epoch (January 1, 1970 at 00:00).
+#
+# where:  DATE_STRING is any string compatible with the GNU
+#         'date --date=DATE_STRING' command.
+#
+# notes:  This is a synonym for date2epoch().
+#:>
+
+date2seconds()
+{
+  echo "$(date --date="$*" +%s)"
+}
+declare -Ftx date2seconds
+
+#-----------------------------------------------------------
+
+#:<
+#= epoch2date SECONDS
+#
+# Convert seconds since epoch to a date string.
+#
+# where:  SECONDS is the number of seconds since the Unix
+#         epoch (January 1, 1970 at 00:00).
+#
+# notes:  The date/time is output using the format:
+#
+#          YYYY-MM-DD HH:MM:SS
+#
+#          This is a synonym for seconds2date().
+#:>
+
+epoch2date()
+{
+  echo "$(date --date="$1" "+%Y-%m-%d %H:%M:%S")"
+}
+declare -Ftx epoch2date
+
+#-----------------------------------------------------------
+
+#:<
+#= seconds2date SECONDS
+#
+# Convert seconds since epoch to a date string.
+#
+# where:  SECONDS is the number of seconds since the Unix
+#         epoch (January 1, 1970 at 00:00).
+#
+# notes:  The date/time is output using the format:
+#
+#          YYYY-MM-DD HH:MM:SS
+#
+#          This is a synonym for epoch2date().
+#:>
+
+seconds2date()
+{
+  echo "$(date --date="$1" "+%Y-%m-%d %H:%M:%S")"
+}
+declare -Ftx seconds2date
+
+#-----------------------------------------------------------
+
+#:<
+#= date2key DATE_STRING
+#
+# Convert a date/time to a sortable key format.
+#
+# where:  DATE_STRING is any string compatible with the GNU
+#         'date --date=DATE_STRING' command.
+#
+# notes:  The date/time is output using the format:
+#
+#          YYYY-MM-DD@HH:MM:SS
+#:>
+
+date2key()
+{
+  echo "$(date --date="$*" "+%Y-%m-%d@%H:%M:%S")"
+}
+declare -Ftx date2key
+
+#-----------------------------------------------------------
+
+#:<
+#= date2num DATE_STRING
+#
+# Convert a date/time to an all-numeric sortable key format.
+#
+# where:  DATE_STRING is any string compatible with the GNU
+#         'date --date=DATE_STRING' command.
+#
+# notes:  The date/time is output using the format:
+#
+#          YYYYMMDDHHMMSS
+#:>
+
+date2num()
+{
+  echo "$(date --date="$*" "+%Y%m%d%H%M%S")"
+}
+declare -Ftx date2num
+
+#-----------------------------------------------------------
+
+#:<
+#= firstDayOfMonth SECONDS
+#
+# Convert a time/date (in seconds since epoch) to a date
+# string that is the first day of the given month.
+#
+# where:  SECONDS is the number of seconds since the Unix
+#         epoch (January 1, 1970 at 00:00).
+#
+# notes:  The date is output using the format:
+#
+#         YYYYMMDD
+#:>
+
+firstDayOfMonth()
+{
+  echo "$(date --date="1970-01-01 UTC $1 seconds" "+%Y%m")01"
+}
+declare -Ftx firstDayOfMonth
+
+#-----------------------------------------------------------
+
+#:<
+#= lastDayOfMonth SECONDS
+#
+# Convert a time/date (in seconds since epoch) to a date
+# string that is the last day of the given month.
+#
+# where:  SECONDS is the number of seconds since the Unix
+#         epoch (January 1, 1970 at 00:00).
+#
+# notes:  The date is output using the format:
+#
+#         YYYYMMDD
+#:>
+
+lastDayOfMonth()
+{
+  local the_date="$1"
+  the_date="$(date --date="1970-01-01 UTC $the_date seconds" "+%Y%m")01"
+  the_date="$(date --date="$the_date 45 days" "+%Y%m")01"
+  echo "$(date --date="$the_date 1 days ago" "+%Y%m%d")"
+}
+declare -Ftx lastDayOfMonth
+
+#-----------------------------------------------------------
+
+#:<
+#= s2hms SECONDS
+#
+# Convert a number of seconds to hours, minutes and seconds.
+#
+# where:  SECONDS is the number of seconds (this is NOT a
+#         number of seconds since Unix epoch)
+#
+# notes:  The output is in the format:
+#
+#         HHH:MM:SS
+#:>
+
+s2hms()
+{
+  local hrs mins secs="$1"
+  hrs="$(( secs / 3600 ))"
+  secs="$(( secs - (hrs * 3600) ))"
+  mins="$(( secs / 60 ))"
+  secs="$(( secs - (mins * 60) ))"
+  printf "%02d:%02d:%02d\n" "$hrs" "$mins" "$secs"
+}
+declare -Ftx s2hms
+
+#-----------------------------------------------------------
+#EOF(datetime)

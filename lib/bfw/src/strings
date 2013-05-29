@@ -1,0 +1,325 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Module    : strings
+# Location  : */lib/bfw/src
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : A variety of string handling functions.
+# Copyright (c) 2005-2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# notes go here
+#-----------------------------------------------------------
+# CHANGELOG
+#-----------------------------------------------------------
+# $Log$
+# * Thu May 16 2013 Scott Smith <scott@bashify.com>
+# - Initial release.
+#-----------------------------------------------------------
+
+#-----------------------------------------------------------
+# File  : strings
+# Path  : ~/etc/bash
+# Usage : lcase STRING --or-- lower STRING
+#         ucase STRING --or-- upper STRING
+#         pcase STRING --or-- proper STRING
+#
+#         setargs field_sep data_string var1 [var2...]
+#            --or--
+#         split field_sep data_string var1 [var2...]
+#
+#         -- Empty may contain whitespace
+#         isEmpty string
+#         notEmpty string
+#
+#         -- Null contains no data at all
+#         isNull string
+#         notNull string
+#
+#         -- Alpha is only A-Z characters)
+#         isAlpha string [addl_chars]
+#         notAlpha string [addl_chars]
+#
+#         -- Digits is only 0-9 characters)
+#         isDigits string [addl_digits]
+#         notDigits string [addl_digits]
+#
+#         -- Alnum is only A-Z & 0-9 characters)
+#         isAlnum string [addl_chars]
+#         notAlnum string [addl_chars]
+#
+#         -- Number is a [+-$]0-9[.]0-9[%] number)
+#         isNumber string [addl_prefix] [addl_chars] [addl_suffix]
+#         notNumber string [addl_prefix] [addl_chars] [addl_suffix]
+#-----------------------------------------------------------
+# Examples:
+#
+# echo "$(lcase "$TEXT")"
+# case "$(lcase "$OPTION)" in...
+# echo "something" | ucase
+# isAlnum "some-string" "-"
+# isNumber '$' '$125.00'
+#-----------------------------------------------------------
+
+if [ -z "bfw_bash_framework" ]
+then
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+lcase()
+{
+        if [[ $# -eq 0 ]]
+        then
+                cat - | tr "[A-Z]" "[a-z]"
+        else
+		local STR="$*"
+                echo "${STR,,}"
+        fi
+}
+declare -Ftx lcase
+
+#-----------------------------------------------------------
+
+ucase()
+{
+        if [[ $# -eq 0 ]]
+        then
+                cat - | tr "[a-z]" "[A-Z]"
+        else
+		local STR="$*"
+                echo "${STR^^}"
+        fi
+}
+declare -Ftx ucase
+
+#-----------------------------------------------------------
+
+pcase()
+{
+        local STR
+        if [[ $# -eq 0 ]]
+        then
+                STR="$(cat -)"
+        else
+                STR="$*"
+        fi
+
+	sed -r "s/(^|[^[:alpha:]])([Oo]')([[:alpha:]])/\1\u\2\u\3/g;s/(^|[^[:alpha:]])(mc)([a-z])/\1\u\2\u\3/g;s/(^|[:?.] *)([a-z])/\1\u\2/g" <<< "$STR"
+}
+declare -Ftx pcase
+
+#-----------------------------------------------------------
+
+tcase()
+{
+	local STR
+        if [[ $# -eq 0 ]]
+        then
+                STR="$(cat -)"
+        else
+                STR="$*"
+        fi
+	sed -r 's/(^|-|[ _:.,/<;|({\[])([a-z])/\1\u\2/g' <<< "$STR"
+}
+declare -Ftx tcase
+
+#-----------------------------------------------------------
+
+param()
+{
+	local PARAM SHOPT CASE
+
+        case "$1" in
+        --ucase|--upper|-u) CASE=U ; shift ;;
+        --lcase|--lower|-l) CASE=L ; shift ;;
+        *) CASE=N ;;
+        esac
+
+	shopt -q extglob && SHOPT=Y || SHOPT=''
+	shopt -s extglob
+
+	PARAM="${1/#*(-)/}"
+
+	[ "$SHOPT" ] || shopt -u extglob
+	
+        case "$CASE" in
+        U) ucase "$PARAM" ;;
+        L) lcase "$PARAM" ;;
+        *) echo "$PARAM" ;;
+        esac
+}
+uparam() { param --ucase "$@" ; }
+lparam() { param --lcase "$@" ; }
+declare -Ftx param
+declare -Ftx uparam
+declare -Ftx lparam
+
+#-----------------------------------------------------------
+
+setargs()
+{
+        # usage: setargs field_sep data_string var1 [var2...]
+        local ARGV OFS
+        local ARGC="$#"
+        local MYFS="$1"
+        local LINE="$2"
+
+        for (( i=3; i<=ARGC; i++ )); do ARGV[$i]="${!i}"; done
+
+        OFS="$IFS" IFS="$MYFS"
+        set -- MYFS LINE $LINE
+        IFS="$OFS"
+
+        for (( i=3; i<=ARGC; i++ )); do export ${ARGV[$i]}="${!i}"; done
+}
+split() { setargs "$@" ; }
+declare -Ftx setargs
+declare -Ftx split
+
+#-----------------------------------------------------------
+
+isEmpty()
+{
+        # usage: isEmpty string
+        grep "^[[:space:]]*$" <<< "$1" &>/dev/null
+}
+declare -Ftx isEmpty
+
+notEmpty()
+{
+        # usage: notEmpty string
+        ! isEmpty "$1"
+}
+declare -Ftx notEmpty
+
+#-----------------------------------------------------------
+
+isNull()
+{
+        # usage: isNull string
+        [ -z "$1" ]
+}
+declare -Ftx isNull
+
+notNull()
+{
+        # usage: notNull string
+        ! isNull "$1"
+}
+declare -Ftx notNull
+
+#-----------------------------------------------------------
+
+isAlpha()
+{
+        # usage: isAlpha string [addl_chars]
+        grep "^[[:alpha:]$2]*$" <<< "$1" &>/dev/null
+}
+declare -Ftx isAlpha
+
+notAlpha()
+{
+        # usage: notAlpha string [addl_chars]
+        ! isAlpha "$@"
+}
+declare -Ftx notAlpha
+
+#-----------------------------------------------------------
+
+isDigits()
+{
+        # usage: isDigits string [addl_digits]
+        grep "^[[:digit:]$2]*$" <<< "$1" &>/dev/null
+}
+declare -Ftx isDigits
+
+notDigits()
+{
+        # usage: notDigits string [addl_digits]
+        ! isDigits "$@"
+}
+declare -Ftx notDigits
+
+#-----------------------------------------------------------
+
+isAlnum()
+{
+        # usage: isAlnum string [addl_chars]
+        grep "^[[:alnum:]$2]*$" <<< "$1" &>/dev/null
+}
+declare -Ftx isAlnum
+
+notAlnum()
+{
+        # usage: notAlnum string [addl_chars]
+        ! isAlnum "$@"
+}
+declare -Ftx notAlnum
+
+#-----------------------------------------------------------
+
+isNumber()
+{
+        # usage: isNumber string [addl_prefix] [addl_digits] [addl_suffix]
+        egrep "^([+-]|$2){0,1}[[:digit:]$3]*\.{0,1}[[:digit:]$3]*${4:+[}$4${4:+]}$" <<< "$1" &>/dev/null
+}
+declare -Ftx isNumber
+
+notNumber()
+{
+        # usage: notNumber string [addl_prefix] [addl_digits]
+        !isNumber "$@"
+}
+declare -Ftx notNumber
+
+#-----------------------------------------------------------
+
+isHex()
+{
+        # usage: isHex string [addl_chars]
+        grep "^[[:xdigit:]$2]*$" <<< "$1" &>/dev/null
+}
+declare -Ftx isHex
+
+notHex()
+{
+        # usage: notHex string [addl_chars]
+        ! isHex "$@"
+}
+declare -Ftx notHex
+
+#-----------------------------------------------------------
+
+wrap() {
+        # usage: wrap [--len=#] [--pad=#] [--skip] [--hard] < stdin
+        local METHOD="-s"
+        local LENGTH=79
+        local INDENT=0
+        local ISTART=1
+        local SPACER="..............................................................................................................................................................................................................................................................."
+
+        while :
+        do
+                case "$1" in
+                --len=*) 	LENGTH="${1#*=}" ;;
+                --pad=*) 	INDENT="${1#*=}" ;;
+                --skip)  	ISTART=2 ;;
+		--skip=*)	ISTART="${1#*=}" ;;
+                --hard)  	METHOD="" ;;
+                *)       	break ;;
+                esac
+                shift
+        done
+
+        INDENT="${SPACER:1:$INDENT}"
+        INDENT="${INDENT//./ }"
+
+        fold $METHOD -w $LENGTH | sed "$ISTART,$ s/^/$INDENT/"
+}
+declare -Ftx wrap
+
+#-----------------------------------------------------------
+#EOF(strings)

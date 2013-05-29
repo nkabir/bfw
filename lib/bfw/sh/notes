@@ -1,0 +1,309 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Program   : notes
+# Location  : ~/lib/bfw/sh
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Interface to manage user notes file(s)
+# Copyright (c) 2008-2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# * Wed Aug 15 2012 Scott Smith <scott@bashify.com>
+# - Fix: Squashed old bug where 'notes --make' without a
+#   file name would create '.txt' - now uses 'notes.txt'
+#
+# * Sun May 13 2012 Scott Smith <scott@bashify.com>
+# - Change: Linux ls parsing instead of IRIX
+#
+# * Tue Feb 23 2010 Scott Smith <scott@bashify.com>
+# - Initial release.
+#-----------------------------------------------------------
+
+if [ "bfw_bash_framework" ]
+then
+  [ "${bfw[debug]}" = "ON" ] && debug_on
+  bfw_script_version "2013-05-28"
+else
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+# define commonly modified configurable variables
+#-----------------------------------------------------------
+
+        ### NONE ###
+
+#-----------------------------------------------------------
+# define static or program reconfigured variables
+#-----------------------------------------------------------
+
+
+# used by help() if included (in usage)
+
+const USAGE="${bfw[script]} [--help] [options] [text]"
+
+const HELP="\
+where:	option	--find	all following arguments are search words
+		--file	use a file other than 'notes'
+		--view	view the entire file (no search)
+		--edit	edit the specified file
+		--make	start a new notes file
+		--all	search (or view or edit) all available files
+		--list	show the available notes files
+		--brief	do not include before/after context for matches
+		--only	like --brief, but also w/o headers/footers
+
+	text	the string or topic keyword(s) to find
+                (if 'text' begins with '@' then only the topics are
+		are searched; otherwise, the entire file is searched)
+
+notes:	If --file is not specified, then the default 'notes.txt' is used.
+
+	To edit notes named 'mynotes':	${bfw[script]} --edit mynotes
+
+	To make a new notes file:	${bfw[script]} --make newfile
+	This is the same as:		${bfw[script]} --edit --file newfile
+
+	To view a file read-only:	${bfw[script]} --view [--file mynotes]
+
+	To find topics about scrum:	${bfw[script]} @scrum
+
+	To find any scrum references:	${bfw[script]} scrum
+
+	To find scrum in all notes	${bfw[script]} --all scrum
+
+	To find --edit in all notes	${bfw[script]} --all --find --edit
+"
+
+# default content for a new notes file
+
+const INIT="\
+@=new file format instructions
+
+Enter new topics using:  @=topic keyword(s)
+
+The topic must begin in the first column; otherwise, it will
+be ignored as a topic (for topic searches.)
+
+Below that, enter the topic content. A topic continues until
+an occurance of a new topic (@= in the first two columns) or
+the end of the file.
+"
+
+# number of context lines to display - for full text search
+# this is the number of lines before and after - for topic
+# search it is the number of lines after the match
+
+const FULL_CONTEXT=10
+const TOPIC_CONTEXT=15
+
+#-----------------------------------------------------------
+# define utility functions
+#-----------------------------------------------------------
+
+cleanup()
+{
+        : # this will be called by die() if defined
+}
+declare -Ftx cleanup
+
+#-----------------------------------------------------------
+
+Init() {
+  [ -f "$1" ] || touch "$1"
+  [ -f "$1" ] || die 2 "error: unable to initialize $1"
+  [ -s "$1" ] || echo "$INIT" > "$1"
+}
+declare -Ftx Init
+
+#------------------------------------------------------------------------------
+
+Header() {
+  if [ "$HEADFOOT" ]
+  then
+    local sep="#######################################"
+    sep="$sep#$sep"
+    echo "$sep"
+    echo "FILE = $1"
+    echo "$sep"
+    echo
+  fi
+}
+declare -Ftx Header
+
+#------------------------------------------------------------------------------
+
+Footer() {
+  if [ "$HEADFOOT" ]
+  then
+    local sep="/// EOF /// EOF /// EOF /// EOF /// EOF"
+    sep="$sep $sep"
+    echo
+    echo "$sep"
+    echo
+  fi
+}
+declare -Ftx Footer
+
+#------------------------------------------------------------------------------
+
+Beautify() {
+  local sep="=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-"
+  sep="$sep=$sep=-"
+  if [ "$VERBOSE" ]
+  then
+    if [ "$1" = "topic" ]
+    then
+      sed "s/^\(@=.*\)/$sep\n\1\n$sep/"
+    else
+      sed "s/^\(@=.*\)/$sep\n\1\n$sep/" \
+      | awk -v FIND="$FIND" '
+          $0 ~ FIND { print ">> " $0; next }
+          { print }
+        '
+    fi
+  else
+    cat -
+  fi
+}
+declare -Ftx Beautify
+
+#-----------------------------------------------------------
+# define application functions
+#-----------------------------------------------------------
+
+FindTopic() {
+  [ "$VERBOSE" ] && CONTEXT="-A $TOPIC_CONTEXT" || CONTEXT=""
+  for F in $FILE
+  do
+    Header "$F"
+    egrep -i $CONTEXT -e "^@=.*${FIND:1}" "$F" | Beautify topic
+    Footer "$F"
+  done
+}
+declare -Ftx FindTopic
+
+#-----------------------------------------------------------
+
+FullText() {
+  [ "$VERBOSE" ] && CONTEXT="-C $FULL_CONTEXT" || CONTEXT=""
+  for F in $FILE
+  do
+    Header "$F"
+    egrep -i $CONTEXT -e "$FIND" "$F" | Beautify fulltext "$FIND"
+    Footer "$F"
+  done
+}
+declare -Ftx FullText
+
+#-----------------------------------------------------------
+# define main application logic
+#-----------------------------------------------------------
+
+[[ "${DEBUG##*#}" == "EZDEBUG" ]] && set -vx
+
+###
+### varible presets
+###
+
+# DATA might be set in the config file, so don't reset if so
+
+DATA=${DATA:-~/etc/notes.d}
+
+MODE=find
+FILE=notes
+FIRST=y
+ALL=""
+VERBOSE=y
+HEADFOOT=y
+CREATE=""
+
+###
+### pre-execution checks
+###
+
+[ -d "$DATA" ] || die 1 "error: data directory does not exist - $DATA"
+
+[ -x ~/bin/visafe ] && alias vi=~/bin/visafe
+
+###
+### parameter parsing
+###
+
+# one type of parse loop - uparam strips ALL leading - chars
+# and converts the argument string to upper case (strings)
+# be sure to break when the "no more args" condition is met,
+# and shift off any multiple arg options
+
+while :
+do
+  case "$(lparam "$1")" in
+  v|view)  MODE=view ;;
+  e|edit)  MODE=edit ;;
+  l|list)  MODE=list ;;
+  f|file)  FILE="$2" ; FIRST="" ; shift ;;
+  a|all)   ALL=y  ;;
+  m|make)  MODE=edit ; CREATE=y ; FILE="${2:-notes}" ; FIRST="" ; shift ;;
+  o|only)  VERBOSE="" ; HEADFOOT="" ;;
+  b|brief) VERBOSE="" ;;
+  s|search|find) shift ; break ;;
+  help) help ;;
+  h) usage ;;
+  *) break ;;
+  esac
+  shift
+done
+
+# post process the parameter selections
+
+if [ "$ALL" ]
+then
+  FILE=$DATA/*.txt
+elif [ "$FIRST" -a -f "$DATA/$1.txt" ]
+then
+  FILE="$DATA/$1.txt"
+  shift
+else
+  FILE="$DATA/$FILE.txt"
+  [ "$CREATE" ] && Init "$FILE"
+fi
+
+###
+### conditional dispatch to application functions
+###
+
+trapset # usually good if temp files are used (trapset)
+
+case "$MODE" in
+view)
+      less $FILE
+      ;;
+edit)
+      vi + $FILE
+      ;;
+list)
+      cd "$DATA"
+      ls -l *.txt \
+      | sed 's/\.txt$//' \
+      | awk '
+        BEGIN {
+          HFORMAT="%-35s  %-12s  %9s\n"
+          DFORMAT="%-35s  %-3s %2s %5s  %9s\n"
+	  printf HFORMAT,"NOTES FILE","LAST EDIT","SIZE"
+	  printf HFORMAT,"===================================","============","========="
+	}
+        { printf DFORMAT,$9,$6,$7,$8,$5 }
+      '
+      ;;
+*)
+      FIND="$*"
+      [ -z "$FIND" -o "$FIND" = "@" ] && usage
+      [ "${FIND:0:1}" = "@" ] && FindTopic || FullText
+      ;;
+esac
+
+#-----------------------------------------------------------
+#EOF(notes)

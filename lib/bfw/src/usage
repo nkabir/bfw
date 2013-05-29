@@ -1,0 +1,195 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Program   : usage
+# Location  : ~/lib/bfw/src
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Universal usage()/help() for bfw/bash scripts
+# Copyright (c) 2008-2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+
+if [ -z "bfw_bash_framework" ]
+then
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+__usage__expand__macros__()
+{
+  awk -v SCRIPT="${bfw[script]}" '
+  BEGIN { IGNORECASE=1 }
+  /{{script}}/ { gsub("{{script}}",SCRIPT) }
+  { print }
+  '
+}
+
+#-----------------------------------------------------------
+
+#:<
+#= usage [no_exit]
+#
+# Displays the text in the global $USAGE. If the 'no_exit'
+# option is specified, then $USAGE is displayed, but the
+# script does not exit.
+#
+# Assumes $USAGE is set before calling. If $USAGE does not
+# begin with "usage:\t" then it will be added.
+#
+# UPDATED: If $USAGE is not defined, then ~/lib/bfw/hlp is
+# checked for a file named {SCRIPT}.USAGE, which is loaded
+# into $USAGE.
+#:>
+
+usage()
+{
+  local MSG FILE
+
+  if [ "$USAGE" ]
+  then
+    MSG="$USAGE"
+  else
+    FILE="${bfw[hlp]}/${bfw[script]}.USAGE"
+    [ -f "$FILE" ] && MSG="$(<"$FILE")"
+  fi
+
+  MSG="${MSG:-usage:\tUSAGE UNDEFINED}"
+
+  [ "${MSG#usage:}" = "$MSG" ] && MSG="usage:\t$MSG" || MSG="$MSG"
+
+  MSG="$(__usage__expand__macros__<<<"$MSG")"
+
+  [ "$1" ] && echo -e "$MSG" || die 0 "$MSG"
+}
+declare -Ftx usage
+
+#-----------------------------------------------------------
+
+#:<
+#= help [no_exit]
+#
+# Displays the text in the global $HELP. If the 'no_exit'
+# option is specified, then the HELP is displayed, but the
+# script does not exit.
+#
+# Assumes $HELP is set before calling.
+#
+# UPDATED: If $HELP is not defined, then ~/lib/bfw/hlp is
+# checked for a file named {SCRIPT}.HELP, which is loaded
+# into $HELP.
+#:>
+
+help()
+{
+  local MSG FILE
+
+  if [ "$HELP" ]
+  then
+    MSG="$HELP"
+  else
+    FILE="${bfw[hlp]}/${bfw[script]}.HELP"
+    [ -f "$FILE" ] && MSG="$(<"$FILE")"
+  fi
+
+  MSG="${MSG:-HELP UNDEFINED}"
+
+  [ "${MSG#usage:}" = "$MSG" ] && MSG="usage:\t$MSG" || MSG="$MSG"
+
+  MSG="$(__usage__expand__macros__<<<"$MSG")"
+
+  echo -e "
+$(usage only)
+
+$MSG
+"
+
+  [ "$1" ] || die 0 -
+}
+declare -Ftx help
+
+#-----------------------------------------------------------
+
+#:<
+#= info [no_exit]
+#
+# Displays the text in the global $INFO. If the 'no_exit'
+# option is specified, then the INFO is displayed, but the
+# script does not exit.
+#
+# Assumes $INFO is set before calling.
+#
+# UPDATED: If $INFO is not defined, then ~/lib/bfw/hlp is
+# checked for a file named {SCRIPT}.INFO, which is loaded
+# into $INFO.
+#:>
+
+info()
+{
+  local MSG FILE
+
+  if [ "$INFO" ]
+  then
+    MSG="$INFO"
+  else
+    FILE="${bfw[hlp]}/${bfw[script]}.INFO"
+    [ -f "$FILE" ] && MSG="$(<"$FILE")"
+  fi
+
+  MSG="${MSG:-INFO UNDEFINED}"
+
+  MSG="$(__usage__expand__macros__<<<"$MSG")"
+
+  echo -e "
+$(help only)
+
+$MSG
+"
+
+  [ "$1" ] || die 0 -
+}
+declare -Ftx info
+
+#-----------------------------------------------------------
+
+#:<
+#= changelog [no_exit]
+#
+# Displays the changelog in the global $CHANGELOG. If the
+# 'no_exit' option is specified, then the changelog is
+# displayed, but the script does not exit.
+#
+# Assumes $CHANGELOG is set before calling.
+#
+# UPDATED: If $INFO is not defined, ${bfw[changelog] is used,
+# and if that is not set then ~/lib/bfw/hlp is checked for a
+# file named {SCRIPT}.CHANGELOG, which is loaded into
+# $CHANGELOG.
+#:>
+
+changelog()
+{
+  local MSG FILE
+
+  if [ "$CHANGELOG" ]
+  then
+    MSG="$CHANGELOG"
+  elif [ "${bfw[changelog]}" ]
+  then
+    MSG="${bfw[changelog]}"
+  else
+    FILE="${bfw[hlp]}/${bfw[script]}.CHANGELOG"
+    [ -f "$FILE" ] && MSG="$(<"$FILE")"
+  fi
+
+  MSG="${MSG:-CHANGELOG UNDEFINED}"
+
+  MSG="$(__usage__expand__macros__<<<"$MSG")"
+
+  echo -e "$MSG"
+
+  [ "$1" ] || die 0 -
+}
+declare -Ftx changelog
+
+#-----------------------------------------------------------
+#EOF(usage)

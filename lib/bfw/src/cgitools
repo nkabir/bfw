@@ -1,0 +1,280 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Program   : cgitools
+# Location  : ~/lib/bfw/src
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Functions generally useful when doing CGI
+# Copyright (c) 2008-2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# Various functions for transforming text strings for use in
+# HTML content and by CGI scripts.
+#-----------------------------------------------------------
+# CHANGELOG
+#-----------------------------------------------------------
+# $Log$
+# * Thu May 16 2013 Scott Smith <scott@bashify.com>
+# - Initial release.
+#-----------------------------------------------------------
+
+if [ -z "bfw_bash_framework" ]
+then
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+#:<
+#= htmlencode [text]
+#
+# Converts the five characters <&>'" in [text] to their html
+# entity forms: &lt;, &amp; and so forth.
+#
+# where:  text = a string of characters to encode
+#
+# notes:  If [text] is omitted, then htmlencode expects to read
+#         input from stdin.
+#:>
+
+htmlencode()
+{
+  if [ $# -gt 0 ]
+  then
+    echo "$*"
+  else
+    cat -
+  fi | perl -MHTML::Entities -pe 'HTML::Entities::encode_entities($_)'
+}
+declare -Ftx htmlencode
+
+#-----------------------------------------------------------
+
+#:<
+#= htmldecode [text]
+#
+# Converts the five htlm entities for the characters <&>'" from
+# their &...; form back to single characters (ie, reverses the
+# effect of htmlencode.)
+#
+# This has a synonym: htmlhexdecode.
+#
+# where:  text = a string of characters to decode
+#
+# notes:  If [text] is omitted, then htmldecode expects to read
+#         input from stdin.
+#:>
+
+htmldecode()
+{
+  if [ $# -gt 0 ]
+  then
+    echo "$*"
+  else
+    cat -
+  fi | perl -MHTML::Entities -pe 'HTML::Entities::decode_entities($_)'
+}
+declare -Ftx htmldecode
+
+#-----------------------------------------------------------
+
+#:<
+#= htmlhexencode [text]
+#
+# Converts the five characters <&>'" in [text] to their html
+# hex entity forms: &#x3c, &#x26; and so forth.
+#
+# where:  text = a string of characters to encode
+#
+# notes:  If [text] is omitted, then htmlhexencode expects to
+#         read input from stdin.
+#:>
+
+htmlhexencode()
+{
+  if [ $# -gt 0 ]
+  then
+    echo "$*"
+  else
+    cat -
+  fi | perl -MHTML::Entities -pe 'HTML::Entities::encode_entities_numeric($_)'
+}
+declare -Ftx htmlhexencode
+
+#-----------------------------------------------------------
+
+#:<
+#= htmlhexdecode [text]
+#
+# This is a synonym for htmldecode.
+#:>
+
+htmlhexdecode()
+{
+  htmldecode "$@"
+}
+declare -Ftx htmlhexdecode
+
+#-----------------------------------------------------------
+
+#:<
+#= urlencode [text]
+#
+# Converts the unsafe characters in a URI to their %HEX forms.
+# A / becomes %2F and so forth.
+#
+# This has a synonym: uriencode.
+#
+# where:  text = a string of characters to encode
+#
+# notes:  If [text] is omitted, then uriencode expects to read
+#         input from stdin.
+#:>
+
+urlencode()
+{
+  if [ $# -gt 0 ]
+  then
+    echo "$*"
+  else
+    cat -
+  fi | perl -MURI::Escape -lne 'print URI::Escape::uri_escape($_)'
+}
+declare -Ftx urlencode
+
+#-----------------------------------------------------------
+
+#:<
+#= uriencode [text]
+#
+# This is a synonym for urlencode.
+#:>
+
+uriencode()
+{
+  urlencode "$@"
+}
+declare -Ftx uriencode
+
+#-----------------------------------------------------------
+
+#:<
+#= urldecode [text]
+#
+# Converts the %HEX entities in an URI to their literal forms,
+# so %2F becomes / and so forth.
+#
+# This has a synonym: uridecode.
+#
+# where:  text = a string of characters to encode
+#
+# notes:  If [text] is omitted, then uridecode expects to read
+#         input from stdin.
+#:>
+
+urldecode()
+{
+  if [ $# -gt 0 ]
+  then
+    echo "$*"
+  else
+    cat -
+  fi | perl -MURI::Escape -lne 'print URI::Escape::uri_unescape($_)'
+}
+declare -Ftx urldecode
+
+#-----------------------------------------------------------
+
+#:<
+#= uridecode [text]
+#
+# This is a synonym for urldecode.
+#:>
+
+uridecode()
+{
+  urldecode "$@"
+}
+declare -Ftx uridecode
+
+#-----------------------------------------------------------
+
+#:<
+#= hexencode [text]
+#
+# Converts ALL characters in [text] to html hex entity forms.
+# All characters are converted to two-digit %HEX values.
+#
+# where:  text = a string of characters to encode
+#
+# notes:  If [text] is omitted, then hexencode expects to read
+#         input from stdin.
+#:>
+
+hexencode()
+{
+  if [ $# -gt 0 ]
+  then
+    echo "$*"
+  else
+    cat -
+  fi | xxd -plain | tr -d "\n" | sed 's/\(..\)/%\1/g'
+  echo
+}
+declare -Ftx hexencode
+
+#-----------------------------------------------------------
+
+#:<
+#= hexdecode [text]
+#
+# Converts the %HEX entities in [text] to their literal forms,
+# so %2F becomes / and so forth.
+#
+# where:  text = a string of characters to encode
+#
+# notes:  If [text] is omitted, then hexdecode expects to read
+#         input from stdin.
+#:>
+
+hexdecode()
+{
+  if [ $# -gt 0 ]
+  then
+    echo "$*"
+  else
+    cat -
+  fi | sed 's/%//g' | fold -c -w60 | xxd -plain -r
+}
+declare -Ftx hexdecode
+
+#-----------------------------------------------------------
+
+#:<
+#= text2html [text]
+#
+# Converts the five characters <&>'" in [text] to their html
+# entity forms: &lt;, &amp; and so forth, and converts spaces
+# to &nbsp; entities, and newlines to <br /> tags. This allows
+# most text output to be safely dumped into a page.
+#
+# where:  text = a block of text to encode
+#
+# notes:  If [text] is omitted, then text2html expects to read
+#         input from stdin.
+#:>
+
+text2html()
+{
+  if [ $# -gt 0 ]
+  then
+    echo "$*"
+  else
+    cat -
+  fi | htmlencode | sed 's/ /\&nbsp;/g s/$/<br>/'
+}
+declare -Ftx text2html
+
+#-----------------------------------------------------------
+#EOF(cgitools)

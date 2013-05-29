@@ -1,0 +1,505 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Program   : visafe
+# Location  : ~/bin
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : keeps multiple revisions of a file for basic
+#             revision tracking/rollback capabilities
+# Copyright (c) 2008-2013 J. Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+
+if [ "bfw_bash_framework" ]
+then
+  [ "${bfw[debug]}" = "ON" ] && debug_on
+  bfw_script_version "2013-05-28"
+else
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+# used by usage() if included (in usage.shinc)
+USAGE="${bfw[script]} [--gui] [--repo=pathspec] [--opts=vi_options] [--vi] file...
+\t${bfw[script]} [--gui] [--repo=pathspec] --{view|diff|recall[=n]} file
+\t${bfw[script]} [--repo=pathspec] [--verbose] --list file
+\t${bfw[script]} [--repo=pathspec] [--verbose] --info
+\t${bfw[script]} --help"
+
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# Requires an alias or other mechanism to ensure visafe is
+# launched INSTEAD OF vim (or other preferred editor). For
+# example, place the following in ~/.bashrc:
+#
+# alias vi=~/bin/visafe
+#
+#-----------------------------------------------------------
+# LOG
+#-----------------------------------------------------------
+# * Tue May 14 2013 Scott Smith <scott@bashify.com>
+# - Change: --rev is now --view
+# - Added: --recall to nmak a revision the current file
+#
+# * Sun May 13 2012 Scott Smith <scott@bashify.com>
+# - Change: configuration now stored in ~/etc/visafe.conf
+# - Added: CFG_DEPTH [1,2,3] for 10,100,1000 revision depth
+#
+# * Tue Jul 27 2010 Scott Smith <scott@bashify.com>
+# - Added: --repo and --opts options
+#
+# * Fri Mar 19 2010 Scott Smith <scott@bashify.com>
+# - Change: --list w/o a file list, lists files in the repository
+#
+# * Wed Mar 17 2010 Scott Smith <scott@bashify.com>
+# - Added: --vi and --info options
+#
+# * Mon Mar 15 2010 Scott Smith <scott@bashify.com>
+# - Fixed: every revsion given the current date on save
+# - Change: --rev/--list is now --list only (see next item)
+# - Added: --rev now allows viewing of a specific revision
+#
+# * Thu Feb 25 2010 Scott Smith <scott@bashify.com>
+# - Updated with 'shinc' struncture and includes.
+#
+# * Fri Jul 11 2008 Scott Smith <scott@bashify.com>
+# - Initial release.
+#-----------------------------------------------------------
+
+#-----------------------------------------------------------
+# define commonly modified configurable constants/variables
+# note that these may be configured in visafe.conf and will
+# only be set here if not already set there
+#-----------------------------------------------------------
+
+CFG_REPO=${CFG_REPO:-~/etc/visafe.d}
+CFG_TEMP=${CFG_TEMP:-/tmp}
+
+CFG_VIM=${CFG_VIM:-/usr/bin/vim}
+CFG_EVIM=${CFG_EVIM:-/usr/bin/evim}
+CFG_DIFF=${CFG_DIFF:-/usr/bin/vimdiff}
+CFG_XDIFF=${CFG_XDIFF:-/usr/bin/meld}
+
+CFG_DEPTH=${CFG_DEPTH:-1}
+
+#-----------------------------------------------------------
+# define constants and program reconfigured variables
+#-----------------------------------------------------------
+
+# SAVED and TEMPDIR may be redefined if --repo is defined,
+# so they are not 'constants' like the other vars here
+
+SAVED="$CFG_REPO"
+TEMPDIR="$SAVED/tmp"
+
+# set the temp file spec
+
+TEMPFILE="$TEMPDIR/visafe.$RANDOM.$$"
+
+# revision depth
+
+REV_DEPTH="$(( CFG_DEPTH + 0 ))"
+
+case "$REV_DEPTH" in
+1) REV_MASK="[0-9]"           ; REV_ZERO=0   ;;
+2) REV_MASK="[0-9][0-9]"      ; REV_ZERO=00  ;;
+3) REV_MASK="[0-9][0-9][0-9]" ; REV_ZERO=000 ;;
+*) die 1 "WARNING: CFG_DEPTH must be 1, 2 or 3" ;;
+esac
+
+# create constants for the runtime commands
+
+const RUN_VIM="$CFG_VIM"
+const RUN_EVIM="$CFG_EVIM"
+const RUN_DIFF="$CFG_DIFF"
+const RUN_XDIFF="$CFG_XDIFF"
+
+# used by help() if included (in usage.shinc)
+
+HELP="\
+where:  --list    List revisions for specified file(s).
+
+                  This lists the file names only, unless the
+                  --verbose option is used, in which case the
+                  first 20 lines of each revision are displayed.
+
+                  If no files are specified, then a list of the
+                  files in the $PROG repository is generated.
+
+        --view    View a revision of the specified file. Use
+                  --view=n to specify which revision number.
+
+                  Without '=n' the file viewed will be the latest
+                  revision. To view an older version, specify a
+                  revision number: --view=3, for example.
+
+                  Note --view operates on a single file and does
+                  not accept multiple files on the command line.
+
+        --recall  Recall a revision of the specified file and
+                  save it (overwrite!) the current version. Use
+                  the --recall=n syntax to specify the revision.
+                  There is no confirmation check for the recall.
+
+                  !! USE WITH CAUTION !!
+
+        --diff    Diff the specified file with a stored revision.
+                  Use --diff=n to specify which revision number.
+
+                  Without '=n' the diff is against the latest
+                  revision. To diff an older version, specify a
+                  revision number: --diff=3, for example.
+
+                  Note --diff operates on a single file and does
+                  not accept multiple files on the command line.
+
+        --info    Display the total number of filenames in the
+                  $PROG repository. Proceed with --verbose to
+                  list the filenames and number of revisions.
+
+        --gui     Use the GUI version of vim or diff.
+
+        --repo    Change the repository path (normally set to
+                  \~/data/visafe). Note that this path must exist
+                  and be writable.
+
+        --opts    Options to pass to the edit/diff program. This
+                  has the same effect as '--vi options', but is
+                  somewhat clearer when embedded in a script. Be
+                  mindful of spaces and special characters in the
+                  option string, and the effects of shell double-
+                  parsing on the string.
+
+        --vi      Force $PROG to stop parsing parameters and pass
+                  the rest of the command line to 'vi'.
+
+notes:  To force the use of '$PROG' instead of 'vi', create an
+        alias:  vi=visafe
+
+        If an alias for 'vi' is used, you can still get 'vi'
+        help using: vi --vi -h
+
+        To bypass visafe, assuming an alias for vi is set,
+        you can use 'vim' (on most systems.)
+
+        The programs used for editing and viewing (normally
+        'vim' for character mode, and 'evim' for --gui), and
+        the programs using for diffs ('diff' or 'vimdiff' in
+        character mode, 'xdiff' for --gui) can be configured
+        in the $PROG script."
+
+#-----------------------------------------------------------
+# define utility functions
+#-----------------------------------------------------------
+
+cleanup()
+{
+  # this will be called by die() if defined
+  [ -f "$TEMPFILE" ] && rm -f "$TEMPFILE"
+  [ -f "$SAVED/.test.$$" ] && rm -f "$SAVED/.test.$$"
+}
+declare -Ftx cleanup
+
+#-----------------------------------------------------------
+# define application functions
+#-----------------------------------------------------------
+
+List() {
+
+  for FILE in "$@"
+  do
+
+    for NAME in "$SAVED/${FILE##*/}."$REV_MASK
+    do
+
+      DATE="$(stat "$NAME" | fgrep "Change:" | sed 's/^Change: \(.*\)\..* \(.*\)/\1 \2/' )"
+
+      SIZE="$(stat "$NAME" | fgrep "Size:" | sed 's/.*Size: \([0-9]*\).*/\1/')"
+
+      if [ "$VERBOSE" ]
+      then
+        echo -e "$SEP\nFILE:${NAME##*/} \t@ $DATE = $SIZE\n$SEP"
+        #sed '/^[^#]/ q' "$NAME"
+        head -20 "$NAME"
+        echo
+      else
+        echo -e "${NAME##*/} \t@ $DATE = $SIZE"
+      fi
+
+    done
+
+  done
+
+}
+declare -Ftx List
+
+#-----------------------------------------------------------
+
+Diffs() {
+
+  [ "$2" ] && die 3 "error: invalid number of parameter(s)"
+
+  FILE="$1"
+
+  [ -f "$FILE" ] || die 1 "error: invalid file '$FILE'"
+
+  ARCH="$SAVED/${FILE##*/}.$REV"
+  [ -f "$ARCH" ] || die 1 "error: no revision $REV for '$FILE'"
+
+  if [ "$GUI" ]
+  then
+    $RUN_XDIFF $OPTS "$ARCH" "$FILE"
+  else
+    $RUN_DIFF $OPTS "$ARCH" "$FILE"
+  fi
+
+}
+declare -Ftx Diffs
+
+#-----------------------------------------------------------
+
+Recall() {
+
+  [ "$2" ] && die 3 "error: invalid number of parameter(s)"
+
+  FILE="$1"
+
+  [ -f "$FILE" ] || die 1 "error: invalid file '$FILE'"
+
+  ARCH="$SAVED/${FILE##*/}.$REV"
+  [ -f "$ARCH" ] || die 1 "error: no revision $REV for '$FILE'"
+
+  cp "$ARCH" "$FILE"
+
+  echo "Recalled revision $REV of $FILE"
+
+}
+declare -Ftx Recall
+
+#-----------------------------------------------------------
+
+View() {
+
+  [ "$2" ] && die 3 "error: invalid number of parameter(s)"
+
+  FILE="$1"
+
+  [ -f "$FILE" ] || die 1 "error: invalid file '$FILE'"
+
+  ARCH="$SAVED/${FILE##*/}.$REV"
+  [ -f "$ARCH" ] || die 1 "error: no revision $REV for '$FILE'"
+
+  cp "$ARCH" "$TEMPFILE"
+
+  if [ "$GUI" ]
+  then
+    $RUN_EVIM $OPTS "$TEMPFILE"
+  else
+    $RUN_VIM $OPTS "$TEMPFILE"
+  fi
+
+}
+declare -Ftx View
+
+#-----------------------------------------------------------
+
+Edit() {
+
+  OLD=0
+  NEW=0
+
+  for FILE in "$@"
+  do
+    if [ -f "$FILE" ]
+    then
+      FILELIST[$OLD]="$FILE"
+      FILETEMP="$TEMPDIR/$OLD:${FILE##*/}"
+      FILESAVE="$SAVED/${FILE##*/}"
+      [ -f "$FILESAVE.$REV_ZERO" ] || cp --preserve=all "$FILE" "$FILESAVE.$REV_ZERO"
+      cp "$FILE" "$FILETEMP"
+      (( OLD++ ))
+    else
+      NEWFILES[$NEW]="$FILE"
+      (( NEW++ ))
+    fi
+  done
+
+  if [ "$GUI" ]
+  then
+    $RUN_EVIM $OPTS "$@"
+  else
+    $RUN_VIM $OPTS "$@"
+  fi
+
+  ID=0
+
+  for FILE in "${FILELIST[@]}"
+  do
+    FILETEMP="$TEMPDIR/$ID:${FILE##*/}"
+    if diff -q "$FILE" "$FILETEMP" &>/dev/null
+    then
+      : # file is unchanged
+    else
+      FILESAVE="$SAVED/${FILE##*/}"
+      # N revisions, so start checking at rev N-1 and move each one up
+      MAX_REV=$(( 10**REV_DEPTH - 2 ))
+      while (( MAX_REV >= 0 ))
+      do
+        THIS=$REV_ZERO$(( MAX_REV ))   ; THIS=${THIS: -$REV_DEPTH}
+        NEXT=$REV_ZERO$(( MAX_REV+1 )) ; NEXT=${NEXT: -$REV_DEPTH}
+        [ -f "$FILESAVE.$THIS" ] && mv "$FILESAVE.$THIS" "$FILESAVE.$NEXT"
+        (( MAX_REV-- ))
+      done
+      cp --preserve=all "$FILE" "$FILESAVE.$REV_ZERO"
+    fi
+    [ -f "$FILETEMP" ] && rm "$FILETEMP"
+    (( ID++ ))
+  done
+
+  for FILE in "${NEWFILES[@]}"
+  do
+    FILESAVE="$SAVED/${FILE##*/}"
+    [ -f "$FILE" ] && cp --preserve=all "$FILE" "$FILESAVE.$REV_ZERO"
+  done
+
+}
+declare -Ftx Edit
+
+#-----------------------------------------------------------
+
+Repo()
+{
+  ls "$SAVED" | sed 's/\(.*\)\.[0-9]*/\1/' | uniq
+}
+
+#-----------------------------------------------------------
+
+Info()
+{
+  ls "$SAVED" > "$TEMPFILE"
+  echo "Total Filenames : $(sed 's/\(.*\)\.[0-9]*/\1/' < "$TEMPFILE" | uniq | wc -l)"
+  echo "Total Revisions : $(wc -l < "$TEMPFILE")"
+  if [ "$VERBOSE" ]
+  then
+    echo
+    sed 's/\(.*\)\.[0-9]*/\1/' < "$TEMPFILE" | uniq -c 
+  fi
+  die 0 -
+}
+declare -Ftx Info
+
+#-----------------------------------------------------------
+# define main application logic
+#-----------------------------------------------------------
+
+[[ "${DEBUG##*#}" == "EZDEBUG" ]] && set -vx
+
+###
+### varible presets
+###
+
+REPOPATH=""     # if set by parameters, error check before using
+
+MODE=edit
+INFO=""
+OPTS=""
+REV=""
+GUI=""
+
+SEP="=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="
+
+###
+### pre-execution checks
+###
+
+[ -d "$TEMPDIR" ] || mkdir -p "$TEMPDIR"
+
+###
+### parameter parsing
+###
+
+while :
+do
+  PARAM="$1"
+  case "$1" in
+  -l|--list) MODE=list ;;
+  -v|--view) MODE=view ; REV=1;;
+  --view=*) MODE=view ; REV="${PARAM#*=}" ;;
+  -v[0-9]|-v[0-9][0-9]|-v[0-9][0-9][0-9]) MODE=view ; REV="${PARAM#-v}" ;;
+  -d|--diff) MODE=diff ; REV=1 ;;
+  --diff=*) MODE=diff ; REV="${PARAM#*=}" ;;
+  -d[0-9]|-d[0-9][0-9]|-d[0-9][0-9][0-9]) MODE=diff ; REV="${PARAM#-d}" ;;
+  -r|--recall) MODE=recall ; REV=1;;
+  --recall=*) MODE=recall ; REV="${PARAM#*=}" ;;
+  -r[0-9]|-r[0-9][0-9]|-r[0-9][0-9][0-9]) MODE=recall ; REV="${PARAM#-r}" ;;
+  -g|--gui) GUI=y ; VIM=/usr/bin/evim ;;
+  --opts=*) OPTS="${1#*=}" ;;
+  --repo=*) REPOPATH="${1#*=}" ;;
+  -i|--info) INFO=y ;;
+  --verbose) VERBOSE=y ;;
+  --vi) shift ; break ;;
+  --help) help ;;
+  -*) usage ;;
+  "") [ "$INFO" ] && break || usage ;;
+  *) break ;;
+  esac
+  shift
+done
+
+# shortcut to info display if requested
+
+[ "$INFO" ] && Info
+
+# normalize any REV to the mask depth
+
+[ "$REV" ] && REV="$REV_ZERO$REV" ; REV="${REV: -$REV_DEPTH}"
+
+###
+### build and check the SAVED and TEMPDIR paths
+###
+
+[ "$REPOPATH" ] && SAVED="$REPOPATH"
+
+TEMPDIR="$SAVED/tmp"
+
+# reset the temp file spec
+
+TEMPFILE="$TEMPDIR/visafe.$RANDOM.$$"
+
+# check the repo path
+
+[ -d "$SAVED" ] || \
+    die 1 "error: repository path does not exist"
+
+touch "$SAVED/.test.$$" &>/dev/null || \
+    die 1 "error: cannot write to repository"
+
+rm -f "$SAVED/.test.$$"
+
+[ -d "$TEMPDIR" ] || mkdir "$TEMPDIR"
+
+touch "$TEMPDIR/.test.$$" &>/dev/null || \
+    die 1 "error: cannot write to repository temp space"
+
+rm -f "$TEMPDIR/.test.$$"
+
+###
+### conditional dispatch to application functions
+###
+
+trapset # usually good if temp files are used (trap.shinc)
+
+[ "$1" ] || MODE=repo
+
+case "$MODE" in
+diff)   Diffs  "$@" ;;
+list)   List   "$@" ;;
+repo)   Repo   "$@" ;;
+view)   View   "$@" ;;
+recall) Recall "$@" ;;
+*)      Edit   "$@" ;;
+esac
+
+cleanup
+
+#------------------------------------------------------------------------------
+#EOF(visafe)

@@ -1,0 +1,70 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Module    : showvars
+# Location  : */lib/bfw/src
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Debugging aide to dump variables
+# Copyright (c) 2006-2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# notes go here
+#-----------------------------------------------------------
+# CHANGELOG
+#-----------------------------------------------------------
+# $Log$
+# * Thu May 16 2013 {{author}}
+# - Initial release.
+#-----------------------------------------------------------
+
+if [ -z "bfw_bash_framework" ]
+then
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+#:<
+#= showvars [-p|--pause] varname [varname...]
+#
+# Dumps variables to the console tty.
+#
+# where:  --pause   Wait for Enter key after snown varname(s)
+#         varnmae   A list of variable names to display
+#
+# notes:  The bfw debug feature is a more robust solution.
+#
+#         An alias '?' exists that can be used instead; but,
+#         beware of single-character file names that might
+#         be picked up by the shell parser instead.
+#
+#         EXAMPLES:
+#
+#         showvars PATH LOGNAME
+#         showvars --pause MYVAR2 MYVAR2
+#         ? BASH_VERSION
+#:>
+
+showvars()
+{
+  local PAUSE VAR
+
+  case "$1" in
+  --pause|-p) PAUSE=Y ; shift ;;
+  *) PAUSE="" ;;
+  esac
+
+  for VAR in "$@"
+  do
+    echo "? $VAR=${!VAR}" 1>&2
+  done
+
+  [[ "$PAUSE" ]] && read -p "Press ENTER to continue..." VAR
+}
+declare -Ftx showvars
+
+alias | fgrep ?= &>/dev/null && alias ?=showvars
+
+#-----------------------------------------------------------
+#EOF(showvars)

@@ -1,0 +1,229 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Program   : bfwhat
+# Location  : ~/lib/bfw/sh
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Read info from a bfw source module
+# Copyright (c) 2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+
+if [ "bfw_bash_framework" ]
+then
+  [ "${bfw[debug]}" = "ON" ] && debug_on
+  bfw_script_version "2013-05-28"
+else
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+# parameter parsing
+
+MODULE=""
+FUNCID=""
+MODE="list"	# options: list, usage, info, code
+
+while :
+do
+	case "$1" in
+	-l|--list)  MODE="list"  ;;
+	-u|--usage) MODE="usage" ;;
+	-i|--info)  MODE="info"  ;;
+	-c|--code)  MODE="code"  ;;
+	--help) help ;;
+	-h) usage ;;
+	-*) usage ;;
+	*) break ;;
+	esac
+	shift
+done
+
+if [ "$3" ]
+then
+  usage
+elif [ "$2" ]
+then
+  MODULE="$1"
+  FUNCID="$2"
+elif [ "$1" ]
+then
+  if [ "$1" = "all" ]
+  then
+    MODULE="all"
+  elif [ -f "${bfw[src]}/$1" ]
+  then
+    MODULE="$1"
+  else
+    MODULE="all"
+    FUNCID="$1"
+  fi
+else
+  MODULE="all"
+fi
+
+#-----------------------------------------------------------
+# FUNCTIONS
+#-----------------------------------------------------------
+
+# get the list of functions
+
+get_function_list()
+{
+  if [ "$MODULE" = "all" ]
+  then
+    FLIST="$(egrep '^([^#]+\(\)[ {]*|#:\+ .*)$' ${bfw[src]}/* | sed 's#.*/## ; s/#:+ *// ; s#().*##' | sort)"
+  elif [ ! -f "${bfw[src]}/$MODULE" ]
+  then
+    die 2 "error: unknown module $MODULE"
+  else
+    FLIST="$(egrep '^([^#]+\(\)[ {]*|#:\+ .*)$' "${bfw[src]}/$MODULE" | sed "s/^/$MODULE:/ ; s/#:+ *// ; s/().*//" | sort)"
+  fi
+}
+declare -Ftx get_function_list
+
+#-----------------------------------------------------------
+
+list_names()
+{
+  local search
+
+  [ "$MODULE" = "all" ] && search="^.*:" || search="^$MODULE:"
+  [ "$FUNCID" ] && search+="$FUNCID\$"
+
+  grep "$search" <<<"$FLIST" \
+  | awk -F: '
+
+      BEGIN { fmt="%-20s%s\n" ; last="" ; Headings() }
+
+      { if (last==$1) {
+          printf "%-20s%s\n","",$2
+        } else {
+          Line()
+          printf "%-20s%s\n",$1,$2
+          last=$1
+        }
+      }
+
+      function Headings()
+      {
+        printf fmt,"MODULE","FUNCTION"
+      }
+
+      function Line()
+      {
+        printf fmt,"----------------","------------------------"
+      }
+    '
+}
+declare -Ftx list_names
+
+#-----------------------------------------------------------
+
+list_usage()
+{
+  local match module funcid
+
+  [ "$MODULE" = "all" ] && search="^.*:" || search="^$MODULE:"
+  [ "$FUNCID" ] && search+="$FUNCID\$"
+
+  for match in $(grep "$search" <<<"$FLIST")
+  do
+    module="${match%%:*}"
+    funcid="${match#*:}"
+    grep "^#= *${funcid}[^[:alnum:]]" "${bfw[src]}/$module" \
+    | sed "s/#= /${module}: /"
+  done
+}
+declare -Ftx list_usage
+
+#-----------------------------------------------------------
+
+list_info()
+{
+  local code="$1"
+  local match module funcid file info
+
+  [ "$MODULE" = "all" ] && search="^.*:" || search="^$MODULE:"
+  [ "$FUNCID" ] && search+="$FUNCID\$"
+
+  for match in $(grep "$search" <<<"$FLIST")
+  do
+
+    module="${match%%:*}"
+    funcid="${match#*:}"
+
+    file="${bfw[src]}/$module"
+
+    info="$(
+      sed -n '/^#:</,/^#:>/p' "$file" \
+      | tr "\n" "\001" \
+      | sed "s/\(#:>\)/\1\\n/g" \
+      | grep "#=\W*$funcid[^[:alnum:]]" \
+      | tr "\001" "\n" \
+      | grep -v "^#:[<>]" \
+      | sed 's/^#=\W*/usage: /;s/^#\W*$//;s/^# //'
+    )"
+
+    echo "------------------------------------------------------------"
+
+    if [ "$info" ]
+    then
+      echo "${match##*:} is defined in ${match%%:*}"
+      echo
+      echo "$info"
+      [ "$code" ] && ( list_function "$file" "$funcid"; )
+    else
+      printf "%-40s(no info)\n" "$match"
+      [ "$code" ] && ( list_function "$file" "$funcid"; )
+    fi
+
+  done
+}
+declare -Ftx list_info
+
+#-----------------------------------------------------------
+
+list_code()
+{
+  list_info code
+}
+declare -Ftx list_code
+
+#-----------------------------------------------------------
+
+list_function()
+{
+  local file="$1"
+  local funcid="$2"
+
+  echo -e "\n          -----------[ FUNCTION CODE ]------------\n"
+
+  source "$file"
+
+  if is_function "$funcid"
+  then
+    declare -f "$funcid"
+  else
+    echo "Uh-oh! $funcid didn't load from ${file##*/}, sorry."
+  fi
+}
+declare -Ftx list_function
+
+#-----------------------------------------------------------
+# MAIN
+#-----------------------------------------------------------
+
+export FLIST=""
+
+get_function_list
+
+case "$MODE" in
+list)  list_names ;;
+usage) list_usage ;;
+info)  list_info  ;;
+code)  list_code  ;;
+*)     die 3 "fatal: unknown operating mode" ;;
+esac
+
+#-----------------------------------------------------------
+#EOF(bfwhat)

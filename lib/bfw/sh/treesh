@@ -1,0 +1,131 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Program   : tprune
+# Location  : ~/lib/bfw/sh
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Read info from a bfw source module
+# Copyright (c) 2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+
+if [ "bfw_bash_framework" ]
+then
+  [ "${bfw[debug]}" = "ON" ] && debug_on
+  bfw_script_version "2013-05-28"
+else
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+# * Mon Mpr 29 2013 Scott Smith <scott@bashify.com>
+# - Change: refactored for bfw (bash framework)
+# * Mon Mar 22 2010 Scott Smith <scott@bashify.com>
+# - Change: Strip the '.' directory from output
+# - Change: Capture stderr and included dirs we don't
+#    have read access to, and flag with (*)
+# - Change: Remove the leading/trailing blank lines
+# - Change: Replaced greps with more reliable awk code
+#-----------------------------------------------------------
+# What follows is a portion of the original documentation.
+# It has been modified to fit the bfw system.
+#-----------------------------------------------------------
+# UNIX TREE
+# Version: 2.3
+# File: */lib/bfw/sh/treesh
+#
+# Displays Structure of Directory Hierarchy
+# =================================================
+# This tiny script uses "ls", "grep", and "sed"
+# in a single command to show the nesting of
+# sub-directories.  The setup command for PATH
+# works with the Bash shell (the Mac OS X default).
+#
+# Setup:
+#    $ cd */lib/bfw/sh
+#    $ chmod 755 treesh
+#    $ cd */lib/bfw/bin
+#    $ ln -s ../start treesh
+#
+#    NOTE: */lib/bfw/bin should be in the PATH
+#
+# Usage:
+#    $ treesh [directory]
+#
+# Examples:
+#    $ treesh
+#    $ treesh /etc/opt
+#    $ treesh ..
+#
+# Public Domain Software -- Free to Use as You Like
+# http://www.centerkey.com/tree  -  By Dem Pilafian
+#-----------------------------------------------------------
+
+USAGE="${bfw[script]} [directory]"
+
+HELP="\
+notes:	Displays the structure of a directory's hierarchy.
+
+	This tiny script uses 'ls', 'grep', and 'sed' - in
+	a single command line - to show the nesting of sub-
+	directories. It is used as follows:
+
+	\$ treesh
+	\$ treesh /etc
+	\$ treesh ..
+"
+
+# check for help requests first; otherwise,
+# if parameter exists, use as base folder
+
+case "$1" in
+--help) help ;;
+-*) usage ;;
+esac
+
+if [ "$1" ]
+then
+   [ -d "$1" ] && cd "$1" || usage
+fi
+
+# display the top level
+
+pwd
+
+# check if there are folders and if so process the directory
+if ls -F1 2>/dev/null | fgrep "/" &>/dev/null
+then
+
+   # get recursive read of the directory
+
+   # 1st awk: preset so first entry is always treated as after a blank
+   #          (in case the first entry is in fact a directory)
+   # 2nd awk: flag blank lines (that preceed directories)
+   # 3rd awk: strip out '.' directory entry
+   # 4th awk: ':' at the end is a directory ONLY after a blank line, print it
+   # 5th awk: likewise with ': Permission denied' messages, print it
+   # 6th awk: ignore all other lines
+
+   # 1st sed: replace ': Permission denied' with ' (*):'
+   # 2nd sed: remove colons
+   # 3rd sed: replace higher level folder names with dashes
+   # 4th sed: indent graph three spaces
+   # 5th sed: replace first dash with a vertical bar
+
+   ls -R 2>&1 \
+   | awk '
+     BEGIN { blank=1 }
+     /^$/ { blank=1 ; next }
+     /\.:$/ { blank=0 ; next }
+     /:$/ { if ( blank ) print ; blank=0 ; next }
+     /: Permission denied$/ { print ; blank=0 ; next }
+     { next }
+     ' \
+   | sed \
+     -e 's/: Permission denied$/ (*):/' \
+     -e 's/:$//' \
+     -e 's/[^-][^\/]*\//--/g' \
+     -e 's/-/|/'
+
+fi
+
+#EOF(UNIX TREE)

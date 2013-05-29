@@ -1,0 +1,153 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Module    : ids
+# Location  : */lib/bfw/src
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Routines for gathering user info.
+# Copyright (c) 2005-2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# notes go here
+#-----------------------------------------------------------
+# CHANGELOG
+#-----------------------------------------------------------
+# $Log$
+# * Thu May 16 2013 Scott Smith <scott@bashify.com>
+# - Initial release.
+#-----------------------------------------------------------
+
+#-----------------------------------------------------------
+# Usage : getUID username
+#         getGID username
+#         getPasswdField field username
+#         isAdmin [username]
+#-----------------------------------------------------------
+# Examples:
+#
+# getUID root --> 0
+# getGID bill --> 20
+# getPasswdField uid root --> 0
+#-----------------------------------------------------------
+
+if [ -z "bfw_bash_framework" ]
+then
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+#:<
+#= get_passwd_data
+#
+# Reads the passwd data, either from the /etc/passwd file,
+# or by using the 'getent passwd' command.
+#
+# notes:  The passwd data is sent to stdout. This function
+#         is intended to be used in a filter of stored in a
+#         environment variable.
+#:>
+
+get_passwd_data()
+{
+	if [ -x getent ]
+	then
+		getent passwd
+	else
+		cat /etc/passwd
+	fi
+}
+
+#-----------------------------------------------------------
+
+#:<
+#= getUID USERNAME
+#
+# Returns the UID (number) for the username.
+#:>
+
+getUID()
+{
+	get_passwd_data | grep "^$1:" | cut -d: -f3
+}
+declare -Ftx getUID
+
+#-----------------------------------------------------------
+
+#:<
+#= getGID USERNAME
+#
+# Returns the default GID (number) for the username.
+#:>
+
+getGID()
+{
+	get_passwd_data | grep "^$1:" | cut -d: -f4
+}
+declare -Ftx getGID
+
+#-----------------------------------------------------------
+
+#:<
+#= getPasswdField FIELD USERNAME
+#
+# Returns the value of the field for the user.
+#
+# where:  FIELD     is one of UID, GID, COMMENT, HOME or SHELL
+#         USERNAME  is the user's account/login name
+#
+# notes:  Field names can be entered in either uppercase or
+#         lowercase. Invalid field names or userid's will
+#         result in an empty string being returned.
+#:>
+
+getPasswdField()
+{
+	local OPT="$(tr "[a-z]" "[A-Z]" <<< "$1")"
+	local USR="$(tr "[A-Z]" "[a-z]" <<< "$2")"
+	
+	case "$OPT" in
+	UID)		get_passwd_data | grep "^$USR:" | cut -d: -f3 ;;
+	GID)		get_passwd_data | grep "^$USR:" | cut -d: -f4 ;;
+	COMMENT)	get_passwd_data | grep "^$USR:" | cut -d: -f5 ;;
+	HOME)		get_passwd_data | grep "^$USR:" | cut -d: -f6 ;;
+	SHELL)		get_passwd_data | grep "^$USR:" | cut -d: -f7 ;;
+	*) : ;;
+	esac
+}
+declare -Ftx getPasswdField
+
+#-----------------------------------------------------------
+
+#:<
+#= isAdmin [USERNAME]
+#
+# Returns TRUE is the specified user, or the current user if
+# no user is provided, is a member of an admin group.
+#
+# where:  USERNAME  is the user's account/login name
+#
+# notes:  This is of limited use if admin groups are not used.
+#:>
+
+isAdmin()
+{
+	local ADMIN_GROUPS="root|lsfadmin"
+
+	if [ "$1" ]
+	then
+		groups "$1" \
+		| sed "s/.*://" \
+		| egrep "(^| )($ADMIN_GROUPS)( |$)" \
+		>/dev/null
+	else
+		groups \
+		| egrep "(^| )($ADMIN_GROUPS)( |$)" \
+		>/dev/null
+	fi
+}
+declare -Ftx isAdmin
+
+#-----------------------------------------------------------
+#EOF(ids)

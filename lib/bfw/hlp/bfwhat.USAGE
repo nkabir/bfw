@@ -1,0 +1,4 @@
+usage:	{{script}} [-h] [--help]
+	{{script}} [-l|--list] {module[}|all
+	{{script}} [-l|--list] [-u|--usage] [-i|--info] [-c|--code]
+		{module}|all [function]

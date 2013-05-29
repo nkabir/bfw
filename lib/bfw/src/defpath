@@ -1,0 +1,147 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Program   : defpath
+# Location  : ~/lib/bfw/src
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Set a rational PATH using Linux standards
+# Copyright (c) 2005-2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+
+if [ -z "bfw_bash_framework" ]
+then
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+#:+ defpath
+#:<
+#= defpath
+#
+# Set a rational PATH using standard Linux practices
+#
+# notes:  To use, simply source this file into your script.
+#         THERE ARE NO USER-ACCESSIBLE FUNCTIONS CREATED.
+#
+#         Primarily useful for cron scripts that don't get
+#         a PATH since they're not running in a login shell,
+#         or to ensure that scripts have a simple PATH.
+#
+#         To make the PATH a simple path, clear the existing
+#         PATH variable before sourcing 'defpath'.
+#
+#         For example:
+#
+#         unset PATH
+#         source defpath
+#
+#         A set of paths to place before and after the PATH
+#         can be defined by setting in the bfw.conf or the
+#         {SCRIPT}.conf file:
+#
+#         bfw[defpath-root-before]=list:of:paths
+#         bfw[defpath-root-after]=list:of:paths
+#         bfw[defpath-before]=list:of:paths
+#         bfw[defpath-after]=list:of:paths
+#
+#         Note that paths for the root user can be set
+#         separately from other users.
+#
+#         If these are not set, then all users get a default
+#         set of paths:
+#
+#         BEFORE ""
+#         AFTER  "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+#:>
+
+#-----------------------------------------------------------
+
+# we duplicate pathmunge here with a funky name rather than
+# load the .shinc file, just in case the user has another
+# pathmunge of their own defined
+
+__defpath__munge()
+{
+  if [ -d "$1" ]
+  then
+    if [ "$2" = "after" ] ; then
+      PATH="$PATH:$1"
+    else
+      PATH="$1:$PATH"
+    fi
+  fi
+}
+declare -Ftx __defpath__munge
+
+#-----------------------------------------------------------
+
+# this removes duplicate entries, and non-directory entries,
+# from the PATH
+
+__defpath__clean()
+{
+  local BEFORE="$1"
+  local AFTER="$2"
+  local OLDIFS="$IFS"
+  local NEWPATH DIR
+
+  PATH="${BEFORE}${BEFORE:+:}${PATH}${AFTER:+:}${AFTER}"
+
+  IFS=:
+
+  NEWPATH="$IFS"
+    
+  for DIR in $PATH
+  do
+    [ "$DIR" ] || continue
+    [ -d "$DIR" ] || continue
+    fgrep "$IFS$DIR$IFS" <<<"$NEWPATH" &>/dev/null && continue
+    NEWPATH+="$DIR:"
+  done
+
+  IFS="$OLDIFS"
+
+  PATH="$(sed 's/.\(.*\)./\1/' <<<"$NEWPATH")"
+}
+declare -Ftx __defpath__clean
+
+#-----------------------------------------------------------
+
+__defpath()
+{
+  local BEFORE AFTER
+
+  # paths placed at the beginning will remain there, but
+  # paths placed at the end will be removed if they already
+  # exist in the PATH - this allow you to force first paths,
+  # and prevents any duplicates
+
+  if [ "$(whoami):$(id -u)" = "root:0" ]
+  then
+    BEFORE=""
+    AFTER="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    [ "${bfw[defpath-root-before]}" ] && BEFORE="${bfw[defpath-root-before]}"
+    [ "${bfw[defpath-root-after]}" ] && AFTER="${bfw[defpath-root-after]}"
+  else
+    BEFORE=""
+    AFTER="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    [ "${bfw[defpath-before]}" ] && BEFORE="${bfw[defpath-before]}"
+    [ "${bfw[defpath-after]}" ] && AFTER="${bfw[defpath-after]}"
+  fi
+
+  __defpath__clean "$BEFORE" "$AFTER"
+}
+declare -Ftx __defpath
+
+# call the default path routine, clean it up,
+# and then export the updated path
+
+__defpath
+
+unset __defpath __defpath__clean
+
+export PATH
+
+#-----------------------------------------------------------
+#EOF(defpath)

@@ -1,0 +1,161 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Module    : foreach
+# Location  : */lib/bfw/src
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Provide a foreach similar to other languages
+# Copyright (c) 2012-2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# foreach() provides a simple way to walk through a bash
+# associative array, and pass the key+value to a callback
+# function for processing, via the foreach_get_value() and
+# foreach_set_value() helper functions
+#-----------------------------------------------------------
+# CHANGELOG
+#-----------------------------------------------------------
+# $Log$
+# * Thu May 16 2013 {{author}}
+# - Initial release.
+#-----------------------------------------------------------
+
+if [ -z "bfw_bash_framework" ]
+then
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+#:<
+#= foreach ARRAY_NAME CALLBACK
+#
+# The foreach() function provides a capability similar to
+# that found in other languages. Each element of the array
+# is read and passed to the callback function for action.
+#
+# where:  ARRAY_NAME  is the NAME of an array
+#         CALLBACK    is the NAME of a function
+#
+# notes:  Both parameters are NAMES. Do no make the mistake
+#         of passing the value.
+#
+#         For every element of ARRAY_NAME, the CALLBACK is
+#         invokded with the array name and current key:
+#
+#             callback arrayname keyvalue
+#
+#         The callback function can use this to operate on
+#         the array element. The foreach_get_value() and
+#         foreach_set_value() functions are provided to
+#         simplify getting and setting array elements.
+#
+# EXAMPLE:
+#
+# callbackShowArray() {
+#   local arrayname="$1"
+#   local key="$2"
+#   echo "$arrayname: $key -> $(foreach_get_value "$arrayname" "$key")"
+# }
+#
+# callbackChangeArray() {
+#   local arrayname="$1"
+#   local key="$2"
+#   local value="$(foreach_get_value "$arrayname" "$key") is modified"
+#   foreach_set_value "$arrayname" "$key" "$value"
+# }
+#
+# # create a couple of sample arrays to play with
+#
+# stdArray=( "1 potato" "2 potato" "3 potato" "four" )
+#
+# declare -A keyArray
+#
+# keyArray["num one"]="1 potato"
+# keyArray["two"]="2 potato"
+# keyArray["three"]="3 potato"
+# keyArray["the fourth"]="four" )
+#
+# echo
+# echo "BEGIN"
+# echo
+#
+# for aname in stdArray keyArray
+# do
+#
+#   echo "Working with $aname array..."
+#   echo
+#
+#   foreach "$aname" callbackShowArray
+#   echo
+#
+#   foreach "$aname" callbackChangeArray
+#   foreach "$aname" callbackShowArray
+#   echo
+#
+# done
+#:>
+
+foreach() {
+  local arrayname="$1"
+  local callback="$2"
+  local keys key
+
+  eval keys=( "\"\${!$arrayname[@]}\"" )
+
+  for key in "${keys[@]}"
+  do
+    $callback "$arrayname" "$key"
+  done
+}
+declare -Ftx foreach
+
+#-----------------------------------------------------------
+
+#:<
+#= var=$(foreach_get_value ARRAY_NAME ARRAY_KEY)
+#
+# This function provides a simple interface for getting the
+# value of an array element.
+#
+# where:  ARRAY_NAME  is the NAME of an array
+#         ARRAY_KEY   is the key (index) into the array
+#
+# notes:  See the example:  bfwhat --info foreach foreach
+#:>
+
+foreach_get_value() {
+  local arrayname="$1"
+  local key="$2"
+  local value
+  eval value="\"\${$arrayname[$key]}\""
+  echo "$value"
+}
+declare -Ftx foreach_get_value
+
+#-----------------------------------------------------------
+
+#:<
+#= var=$(foreach_set_value ARRAY_NAME ARRAY_KEY VALUE)
+#
+# This function provides a simple interface for setting the
+# value of an array element.
+#
+# where:  ARRAY_NAME  is the NAME of an array
+#         ARRAY_KEY   is the key (index) into the array
+#         VALUE       is the value to write to the array
+#
+# notes:  See the example:  bfwhat --info foreach foreach
+#:>
+
+foreach_set_value() {
+  local arrayname="$1"
+  local key="$2"
+  local value="$3"
+  eval "$arrayname[\"$key\"]=\"$value\""
+}
+declare -Ftx foreach_set_value
+
+#-----------------------------------------------------------
+#EOF(foreach)

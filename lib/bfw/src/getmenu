@@ -1,0 +1,155 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Module    : getmenu
+# Location  : */lib/bfw/src
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Provides a basic keystroke-driven menu system
+# Copyright (c) 2005-2013 Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+# NOTES
+#-----------------------------------------------------------
+# notes go here
+#-----------------------------------------------------------
+# CHANGELOG
+#-----------------------------------------------------------
+# $Log$
+# * Thu May 16 2013 Scott Smith <scott@bashify.com>
+# - Initial release.
+#-----------------------------------------------------------
+
+if [ -z "bfw_bash_framework" ]
+then
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+#-----------------------------------------------------------
+
+#:<
+#= getmenu rtnvar prompt [valid] [null] [escape] [timeout {seconds}]
+#
+# Provides a basic keystroke-driven menu system.
+#
+# where:  rtnvar    the variable used to return the selection
+#         prompt    the menu prompt (see notes for details)
+#         valid     literal, forces input to match the prompt
+#         null      literal, allow a null input (ie, Enter)
+#         escape    literal, allow Escape as input (see notes)
+#         timeout   literal, wait the specified {seconds}
+#
+# notes:  The valid, null, escape and timeout options are
+#         literal values. The timeout option requires an
+#         additional number of seconds, which must be the
+#         next option on the command line.
+#
+#         The prompt is built as follows:
+#
+#             "F)irst, s)econd, t)hird, e)tc: "
+#
+#         getmenu does two things with this string. First,
+#         it capitalizes the "options", so the string is:
+#
+#             "F)irst, S)econd, T)hird, E)tc: "
+#
+#         Second, it harvests the characters to the left of
+#         the ')' character, and uses them to create a list
+#         of valid options:
+#
+#             F S T E
+#
+#         The 'valid' option forces input to be validated
+#         against this list, and getmenu doesn't return
+#         until a valid character is entered. Without the
+#         'valid' option, the getmenu returns as soon as any
+#         key is pressed.
+#
+#         The 'null' and 'escape' options add to the list of
+#         valid inputs. The null option allows the user to
+#         press Enter, the escap option allows the Esc key.
+#         These set rtnvar to ENTER and ESCAPE, respectively.
+#
+#         Note that null/Enter are usually synonymous, but
+#         there are many ways Escape can be returned. The
+#         function and cursor control keys - and others -
+#         often return an Escape character.
+#
+#         The timeout option will, if time expires, return
+#         ENTER.
+#
+#         The user should be careful to properly handle the
+#         ENTER and ESCAPE return values.
+#:>
+
+getmenu()
+{
+    local -A gm
+
+    gm[retval]="$1"
+    gm[prompt]="$(sed "s/\(.\))/\u\1)/g" <<<"$2")"
+    gm[options]="$(sed 's/[^)]*\(.)\)/\1/g;s/)[^)]*$//;s/)//g;s/./\u&/g' <<<"$2")"
+    gm[validate]=""
+    gm[escape]=""
+    gm[timeout]=""
+    gm[null]=""
+    gm[choice]=""
+
+    cursor pos
+
+    gm[row]="${SCREEN_POS%;*}"
+    gm[col]="${SCREEN_POS#*;}"
+
+    (( gm[row]-- ))
+    (( gm[col]-- ))
+
+    shift 2
+
+    while [ "$1" ]
+    do
+        case "${1^^}" in
+        VALID|VALIDATE) gm[validate]=Y             ;;
+        ESC|ESCAPE)     gm[escape]=Y               ;;
+        CR|ENTER|NULL)  gm[null]=Y                  ;;
+        WAIT|TIMEOUT)   gm[timeout]="-t $2"; shift ;;
+        *)              :                        ;;
+        esac
+        shift
+    done
+
+    while :
+    do
+        cursor goto ${gm[row]} ${gm[col]}
+        clear eol
+
+        read -s -d '' -n 1 ${gm[timeout]} -p "${gm[prompt]}" gm[choice]
+
+        case "${gm[choice]}" in
+        "") gm[choice]=ENTER ;;
+        "") gm[choice]=ESCAPE ;;
+        esac
+
+        if [ "${gm[validate]}" ]
+        then
+            case "${gm[choice]^^}" in
+            [${gm[options]}])
+                break
+                ;;
+            ENTER)
+                [ "${gm[null]}" ] && break
+                ;;
+            ESCAPE)
+                [ "${gm[escape]}" ] && break
+                ;;
+            esac
+        else
+            break
+        fi
+    done
+
+    clear eol
+    echo -n "${gm[choice]}"
+
+    export ${gm[retval]}="${gm[choice]}"
+}
+declare -Ftx getmenu
+
+#EOF(getmenu)

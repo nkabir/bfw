@@ -1,0 +1,96 @@
+#!/bin/bash
+#-----------------------------------------------------------
+# Program   : noscroll
+# Location  : ~/bin
+# Author    : Scott Smith <scott@bashify.com>
+# Purpose   : Keep a non-scrolling line at top or bottom of
+#             screen, and run a command in the remainder.
+# Copyright (c) 2013 J. Scott Smith <scott@bashify.com>
+#-----------------------------------------------------------
+
+if [ "bfw_bash_framework" ]
+then
+  [ "${bfw[debug]}" = "ON" ] && debug_on
+  bfw_script_version "2013-05-28"
+else
+  echo "error: bfw scripts cannot be run directly"
+  exit 99
+fi
+
+USAGE="${bfw[script]} position[=#] message command"
+
+HELP="\
+where:  position    make non-scrolling line(s) at 'top' or
+                    or 'bottom' of the screen, and if no =#
+                    defined make it one line
+        message     text to display in top/bottom line
+        command     command to be executed in rest of screen
+
+notes:  The message is displayed in the reverse attribute.
+"
+
+#-----------------------------------------------------------
+
+set_display()
+{
+  clear
+  if [ "$POSITION" = "top" ]
+  then
+    cursor home
+    echo -n "$MESSAGE"
+    tput csr $SIZE $SCROLL
+  else
+    cursor $SCROLL 0
+    echo -n "$MESSAGE"
+    cursor home
+    tput csr 0 $SCROLL
+  fi
+}
+declare -Ftx set_display
+
+#-----------------------------------------------------------
+
+reset_display()
+{
+    #clear
+    tput csr 0 $((ROWS - 1))
+}
+declare -Ftx reset_display
+
+#-----------------------------------------------------------
+
+[ $# -eq 3 ] || usage
+
+POSITION="$1"
+MESSAGE="$2"
+
+shift 2
+
+ROWS=$(cursor rows)
+SIZE=1
+SCROLL=$((ROWS-SIZE))
+
+# validate the position parameter
+
+case "$POSITION" in
+t|top)      POSITION="top"    ; SIZE=1 ;;
+b|bottom)   POSITION="bottom" ; SIZE=1 ;;
+t=|top=)    POSITION="top"    ; SIZE="${POSITION#*=}" ;;
+b=|bottom=) POSITION="bottom" ; SIZE="${POSITION#*=}" ;;
+*) die 1 "error: the first argument must be 'top' or 'bottom' with optional '=#rows'"
+esac
+
+# initialize the scrolling region
+set_display
+
+# Run something that writes into the scolling region
+eval "$@"
+ec=$?
+
+# reset the scrolling region
+read -p 'Done. Press ENTER to continue (will clear screen): '
+reset_display
+
+exit "$ec"
+
+#EOF
